@@ -91,7 +91,22 @@ pytest . model-router project-accelerator
 Expected: 14 passed (root) + 10 passed (model-router) + 9 passed
 (project-accelerator).
 
-## 7. Scaffold a new project with the CLI
+## 7. Run the examples
+
+Each package ships a runnable example under its own `examples/` dir. The
+registry/prompting example needs no credential; the other three make real
+model calls, so they need `ANTHROPIC_API_KEY` set or an ambient
+`claude login` OAuth session -- without one they print a message and exit
+cleanly instead of crashing:
+
+```bash
+python examples/run_orchestration_accelerator_example.py           # orchestration_accelerator alone -- no credential needed
+python examples/run_ticket_classification.py                       # full stack via project_accelerator.execute(), real model calls
+python model-router/examples/run_router_example.py                 # model-router alone, real model call
+python project-accelerator/examples/run_execute_example.py         # project_accelerator entry point, real model calls
+```
+
+## 8. Scaffold a new project with the CLI
 
 ```bash
 cpa new --project-name my-app --no-venv     # installs into the currently active env
@@ -113,7 +128,7 @@ This generates, under `./my-app/`:
 - `tests/test_sample_pipeline.py`
 - all four accelerator packages installed into the chosen environment
 
-## 8. Test a scaffolded project
+## 9. Test a scaffolded project
 
 ```bash
 cd my-app
@@ -127,7 +142,7 @@ To actually run the pipeline end to end (needs a real credential —
 python pipeline/run_pipeline.py ticketClassification "sample ticket text"
 ```
 
-## 9. Guided setup instead of steps 7–8 (optional)
+## 10. Guided setup instead of steps 8–9 (optional)
 
 Inside a Claude Code session in this repo, invoke the `setup-accelerator`
 skill (`.claude/skills/setup-accelerator/SKILL.md`) — it interviews you
@@ -137,7 +152,7 @@ fallback, target environment), runs `cpa new` for you, writes the resulting
 run a smoke test, and reports what was configured vs. left on the built-in
 default.
 
-## 10. Using the library entry point directly
+## 11. Using the library entry point directly
 
 ```python
 from project_accelerator import execute
@@ -150,6 +165,34 @@ result = execute({
     "backend": "agent_sdk",      # "agent_sdk" | "messages_api"
 })
 ```
+
+## 12. Deploying code changes
+
+All four packages (step 4) are installed editable (`pip install -e`), so
+most changes take effect immediately, with no reinstall:
+
+- **Python source, `process_registry.yaml`, `prompts/*.yaml`,
+  `logger_config.json`, `.env`** — picked up on next run automatically.
+  A long-running process (e.g. a server importing these packages) must be
+  restarted to pick up the change; a one-shot script (`pytest`,
+  `run_pipeline.py`, the `examples/`) picks it up on its next invocation.
+- **`pyproject.toml` dependency changes** (new/changed package deps in any
+  of the four `pyproject.toml`s) — re-run the relevant install command from
+  step 3/4 for that package only, in order if the change is in a package
+  others depend on.
+- **New/changed console-script entry points** (e.g. `cpa`) — re-run
+  `pip install -e "project-accelerator[dev]"`.
+
+After any change, re-verify before considering it deployed:
+
+```bash
+pytest . model-router project-accelerator   # step 6
+python examples/run_ticket_classification.py  # or the relevant example from step 7
+```
+
+If the change is scaffold-facing (`project-accelerator/templates/`, the
+`cpa` CLI), re-run `cpa new` (step 8) into a scratch dir to confirm
+generated output still matches.
 
 ## Troubleshooting
 
