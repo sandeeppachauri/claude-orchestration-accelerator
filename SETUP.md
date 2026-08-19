@@ -26,12 +26,29 @@ python -m venv .venv
 .venv\Scripts\activate        # PowerShell: .venv\Scripts\Activate.ps1
 ```
 
-## 3. Install the two pre-existing accelerators (local path, editable)
+## 3. Install the two pre-existing accelerators
+
+Two ways to get these — pick one. Both install the same packages
+(`auth_accelerator`, `sdk_logger_accelerator`); the git route is what
+someone who only `git clone`s this repo (without the sibling `Accelerators`
+checkout) should use.
+
+**Option A — local path (editable), if you have `D:\Claude\Accelerators` checked out:**
 
 ```bash
 pip install -e "D:\Claude\Accelerators\claude-auth-accelerator"
 pip install -e "D:\Claude\Accelerators\ClaudeSDKLoggerAccelerator"
 ```
+
+**Option B — direct from git (no local checkout needed):**
+
+```bash
+pip install "git+https://github.com/sandeeppachauri/Accelerators.git#subdirectory=claude-auth-accelerator"
+pip install "git+https://github.com/sandeeppachauri/Accelerators.git#subdirectory=ClaudeSDKLoggerAccelerator"
+```
+
+Pin a specific commit/tag/branch by appending `@<ref>` before the `#`, e.g.
+`git+https://github.com/sandeeppachauri/Accelerators.git@v0.2.0#subdirectory=claude-auth-accelerator`.
 
 ## 4. Install the three packages in this repo (editable, dependency order)
 
