@@ -48,6 +48,18 @@ accelerators into the chosen venv (or the active environment with
   directory). The project is created at `<dir>/<project-name>`.
 - `--python <exe>` -- install into an existing interpreter/venv instead of
   creating a new one. Mutually exclusive with `--venv`.
+- `--accelerators-path <dir>` -- path to the sibling `Accelerators` repo
+  (`claude-auth-accelerator`, `ClaudeSDKLoggerAccelerator`), for when it
+  isn't checked out at the default `../Accelerators` location relative to
+  this repo. Without it (or a repo clone in the default spot), `cpa new`
+  aborts with a warning listing what it couldn't find rather than silently
+  scaffolding a partial install.
+- `--allow-missing-accelerators` -- scaffold anyway even if those packages
+  can't be found.
+
+See the root [`requirements.txt`](../requirements.txt) for the pip
+prereqs needed to bootstrap a brand-new environment before running `cpa
+new` or this repo's own test suite.
 
 ## Tests
 

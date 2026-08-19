@@ -1,0 +1,12 @@
+# Root-level prereqs for developing on / running `cpa new` from this repo
+# in a fresh environment. Each accelerator's own pip dependencies are
+# declared in its pyproject.toml and are pulled in automatically by
+# `pip install -e <package>` (what `cpa new` runs) -- this file is only for
+# bootstrapping a brand-new environment before that point, or for running
+# the repo's own test suite directly.
+
+pyyaml>=6.0
+python-dotenv>=1.0.0
+pytest>=8.0.0
+pytest-asyncio>=0.24.0
+hatchling>=1.18.0

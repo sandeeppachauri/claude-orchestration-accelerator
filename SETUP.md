@@ -122,6 +122,15 @@ cpa new --project-name my-app --python /path/to/existing/venv/bin/python  # reus
 existing interpreter/venv instead of creating one and cannot be combined
 with `--venv`.
 
+By default `cpa new` looks for the sibling `Accelerators` repo (containing
+`claude-auth-accelerator` and `ClaudeSDKLoggerAccelerator`) at
+`../Accelerators` relative to this repo. On a machine where that repo
+isn't checked out there, `cpa new` now aborts with a warning instead of
+silently scaffolding a partial install — pass `--accelerators-path <dir>`
+to point at it, or `--allow-missing-accelerators` to proceed without those
+two packages. See the root `requirements.txt` for the pip prereqs needed
+to bootstrap a fresh environment before running `cpa new` at all.
+
 This generates, under `./my-app/` (or `<path>/my-app/` with `--path`):
 
 - `prompts/*.yaml`, `process_registry.yaml` (pre-populated with the

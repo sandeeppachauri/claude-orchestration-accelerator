@@ -195,21 +195,25 @@ def test_ticket_classification_classify_step():
     )
 
 
-def _install_accelerators(python_exe: str) -> None:
+def _install_accelerators(python_exe: str, accelerators_root: Path) -> list[str]:
+    """Installs each accelerator package into python_exe. Returns the list of
+    package paths that were missing (skipped) rather than installed."""
     packages = [
-        str(ACCELERATORS_ROOT / "claude-auth-accelerator"),
-        str(ACCELERATORS_ROOT / "ClaudeSDKLoggerAccelerator"),
+        str(accelerators_root / "claude-auth-accelerator"),
+        str(accelerators_root / "ClaudeSDKLoggerAccelerator"),
         str(REPO_ROOT),
         str(REPO_ROOT / "model-router"),
     ]
+    missing = []
     for package_path in packages:
         if not Path(package_path).exists():
-            print(f"  (skipping install of {package_path} -- not found)")
+            missing.append(package_path)
             continue
         subprocess.run(
             [python_exe, "-m", "pip", "install", "-e", package_path, "--quiet"],
             check=True,
         )
+    return missing
 
 
 def cmd_new(args: argparse.Namespace) -> None:
@@ -252,8 +256,29 @@ def cmd_new(args: argparse.Namespace) -> None:
     else:
         python_exe = sys.executable
 
+    accelerators_root = (
+        Path(args.accelerators_path).expanduser().resolve()
+        if args.accelerators_path
+        else ACCELERATORS_ROOT
+    )
     print("Installing accelerator packages...")
-    _install_accelerators(python_exe)
+    missing = _install_accelerators(python_exe, accelerators_root)
+    if missing:
+        print(
+            "\nWarning: the following accelerator packages were NOT installed "
+            "(source not found):",
+            file=sys.stderr,
+        )
+        for package_path in missing:
+            print(f"  - {package_path}", file=sys.stderr)
+        print(
+            f"Pass --accelerators-path to point at the '{accelerators_root.name}' "
+            "sibling repo, or clone it alongside this repo.",
+            file=sys.stderr,
+        )
+        if not args.allow_missing_accelerators:
+            print("Aborting (pass --allow-missing-accelerators to scaffold anyway).", file=sys.stderr)
+            sys.exit(1)
 
     print(f"\nScaffolded project '{args.project_name}' at {dest}")
     print("Created:")
@@ -286,6 +311,16 @@ def main() -> None:
         "--python",
         help="Path to an existing python interpreter (e.g. an existing venv) to install into; "
         "cannot be combined with --venv",
+    )
+    new_parser.add_argument(
+        "--accelerators-path",
+        help="Path to the sibling 'Accelerators' repo containing claude-auth-accelerator and "
+        "ClaudeSDKLoggerAccelerator (default: '../Accelerators' next to this repo)",
+    )
+    new_parser.add_argument(
+        "--allow-missing-accelerators",
+        action="store_true",
+        help="Scaffold even if claude-auth-accelerator/ClaudeSDKLoggerAccelerator can't be found",
     )
     new_parser.set_defaults(venv=True, func=cmd_new)
 
