@@ -32,9 +32,11 @@ you took (Path B skips straight to step 8).
 
 ## 2A. One-time environment setup — Manual path
 
-From `D:\Claude\claude-orchestration-accelerator`:
+Clone this repo, then run everything below from inside it:
 
 ```bash
+git clone https://github.com/sandeeppachauri/claude-orchestration-accelerator.git D:\Claude\claude-orchestration-accelerator
+cd D:\Claude\claude-orchestration-accelerator
 python -m venv .venv
 .venv\Scripts\activate        # PowerShell: .venv\Scripts\Activate.ps1
 ```
