@@ -16,6 +16,29 @@ result = execute({
 
 See `Master_Accelerator_Plan.md` at the repo root for the full design.
 
+## Capabilities (per-step model config)
+
+A step in `process_registry.yaml` can carry any extra key beyond
+`prompt`/`model`/`fallback` — it passes straight through to the model
+call, no accelerator code change needed. Supported keys depend on the
+payload's `"backend"`:
+
+| Capability | Backend | Example |
+| --- | --- | --- |
+| `max_turns` | `agent_sdk` | `max_turns: 1` |
+| `thinking` (extended thinking) | `agent_sdk` | `thinking: {type: enabled, budget_tokens: 4096}` |
+| `permission_mode` | `agent_sdk` | `permission_mode: acceptEdits` |
+| `temperature` | `messages_api` | `temperature: 0.2` |
+| `top_p` | `messages_api` | `top_p: 0.9` |
+| `max_tokens` | `messages_api` | `max_tokens: 2048` |
+
+`agent_sdk` keys pass through `auth_accelerator.build_options(**extra)`
+into `ClaudeAgentOptions`; `messages_api` keys pass through directly to
+`anthropic.messages.create(**extra)`. See
+`.claude/rules/process-registry.md` for the full schema and
+`process_registry.yaml`'s `classify` step for a live example
+(`max_turns: 1`).
+
 ## Sub-projects
 
 - [`claude-orchestration-accelerator`](./README_package.md) (this repo

@@ -119,6 +119,30 @@ The payload's `"process"` (and optional `"step"`) select what to run;
 `process_registry.yaml` alone controls step order and per-step config --
 the payload can never reorder, skip, or subset a process's `steps` list.
 
+## Capabilities (per-step model config)
+
+A step block isn't limited to `prompt`/`model`/`fallback` -- any extra
+key passes straight through to the model call, no code change needed:
+
+| Capability | Backend | Example |
+| --- | --- | --- |
+| `max_turns` | `agent_sdk` | `max_turns: 1` |
+| `thinking` (extended thinking) | `agent_sdk` | `thinking: {{type: enabled, budget_tokens: 4096}}` |
+| `permission_mode` | `agent_sdk` | `permission_mode: acceptEdits` |
+| `temperature` | `messages_api` | `temperature: 0.2` |
+| `top_p` | `messages_api` | `top_p: 0.9` |
+| `max_tokens` | `messages_api` | `max_tokens: 2048` |
+
+```yaml
+classify:
+  prompt: classify.yaml
+  model: claude-haiku-4-5-20251001
+  fallback: [claude-sonnet-5]
+  max_turns: 1   # capability passthrough -- reaches build_options() untouched
+```
+
+See `.claude/rules/process-registry.md` for the full schema.
+
 ## Tests
 
 ```bash

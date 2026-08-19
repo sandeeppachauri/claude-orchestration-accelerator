@@ -238,7 +238,36 @@ result = execute({
 })
 ```
 
-## 12. Deploying code changes
+## 12. Per-step model capabilities
+
+A step block in `process_registry.yaml` isn't limited to
+`prompt`/`model`/`fallback` — any extra key passes straight through to
+the model call, so a step's behavior is tunable from config alone:
+
+| Capability | Backend | Example |
+| --- | --- | --- |
+| `max_turns` | `agent_sdk` | `max_turns: 1` |
+| `thinking` (extended thinking) | `agent_sdk` | `thinking: {type: enabled, budget_tokens: 4096}` |
+| `permission_mode` | `agent_sdk` | `permission_mode: acceptEdits` |
+| `temperature` | `messages_api` | `temperature: 0.2` |
+| `top_p` | `messages_api` | `top_p: 0.9` |
+| `max_tokens` | `messages_api` | `max_tokens: 2048` |
+
+```yaml
+classify:
+  prompt: classify.yaml
+  model: claude-haiku-4-5-20251001
+  fallback: [claude-sonnet-5]
+  max_turns: 1   # <-- capability passthrough, reaches build_options() untouched
+```
+
+`agent_sdk` keys flow through `auth_accelerator.build_options(**extra)`
+into `ClaudeAgentOptions`; `messages_api` keys flow through directly to
+`anthropic.messages.create(**extra)`. An unsupported key for the chosen
+backend/SDK version raises a `TypeError` at call time. See
+`.claude/rules/process-registry.md` for the full schema.
+
+## 13. Deploying code changes
 
 All four packages (step 4) are installed editable (`pip install -e`), so
 most changes take effect immediately, with no reinstall:
