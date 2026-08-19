@@ -10,14 +10,24 @@ environment.
 from __future__ import annotations
 
 import argparse
+import importlib.resources
 import shutil
 import subprocess
 import sys
 import venv
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[3]  # .../claude-orchestration-accelerator
+# Local-checkout convenience only: when this repo (and its sibling
+# Accelerators repo) are cloned on disk, _install_accelerators() prefers
+# editable installs from these paths over fetching from git. Neither path
+# needs to exist -- `cpa` works standalone via pip/pipx from git alone,
+# since the scaffold template itself ships as package data (scaffold_data/)
+# rather than being read from REPO_ROOT.
+REPO_ROOT = Path(__file__).resolve().parents[3]
 ACCELERATORS_ROOT = REPO_ROOT.parent / "Accelerators"
+
+ORCHESTRATION_GIT_URL = "https://github.com/sandeeppachauri/claude-orchestration-accelerator.git"
+ACCELERATORS_GIT_URL = "https://github.com/sandeeppachauri/Accelerators.git"
 
 SKELETON_ENTRIES = [
     "CLAUDE.md",
@@ -26,12 +36,17 @@ SKELETON_ENTRIES = [
 ]
 
 
+def _scaffold_data_dir() -> Path:
+    return Path(str(importlib.resources.files("project_accelerator") / "scaffold_data"))
+
+
 def _copy_reference_skeleton(dest: Path) -> None:
-    """One-time snapshot copy of the repo root's reference Claude Code
-    project skeleton -- not a live link. A scaffolded project owns its
-    own copy and can diverge afterward."""
+    """One-time snapshot copy of the packaged reference Claude Code project
+    skeleton -- not a live link. A scaffolded project owns its own copy and
+    can diverge afterward."""
+    data_dir = _scaffold_data_dir()
     for entry in SKELETON_ENTRIES:
-        src = REPO_ROOT / entry
+        src = data_dir / entry
         if not src.exists():
             continue
         target = dest / entry
@@ -42,10 +57,11 @@ def _copy_reference_skeleton(dest: Path) -> None:
 
 
 def _copy_sample_config(dest: Path) -> None:
-    shutil.copy2(REPO_ROOT / "process_registry.yaml", dest / "process_registry.yaml")
+    data_dir = _scaffold_data_dir()
+    shutil.copy2(data_dir / "process_registry.yaml", dest / "process_registry.yaml")
     prompts_dest = dest / "prompts"
     prompts_dest.mkdir(exist_ok=True)
-    for prompt_file in (REPO_ROOT / "prompts").glob("*.yaml"):
+    for prompt_file in (data_dir / "prompts").glob("*.yaml"):
         shutil.copy2(prompt_file, prompts_dest / prompt_file.name)
 
 
@@ -195,22 +211,67 @@ def test_ticket_classification_classify_step():
     )
 
 
-def _install_accelerators(python_exe: str, accelerators_root: Path) -> list[str]:
-    """Installs each accelerator package into python_exe. Returns the list of
-    package paths that were missing (skipped) rather than installed."""
-    packages = [
-        str(accelerators_root / "claude-auth-accelerator"),
-        str(accelerators_root / "ClaudeSDKLoggerAccelerator"),
-        str(REPO_ROOT),
-        str(REPO_ROOT / "model-router"),
+def _install_accelerators(
+    python_exe: str, accelerators_root: Path, allow_missing_accelerators: bool
+) -> list[str]:
+    """Installs each accelerator package into python_exe. Prefers an editable
+    install from a local checkout (accelerators_root / REPO_ROOT) when
+    present -- convenient for contributors -- and otherwise falls back to
+    installing straight from GitHub, so `cpa new` works standalone from a
+    pip/pipx install with no repo cloned locally. Returns the list of
+    packages that could not be installed either way (only possible for the
+    two accelerators_root packages when allow_missing_accelerators is set)."""
+    local_packages = [
+        accelerators_root / "claude-auth-accelerator",
+        accelerators_root / "ClaudeSDKLoggerAccelerator",
     ]
+    git_specs = [
+        f"git+{ACCELERATORS_GIT_URL}#subdirectory=claude-auth-accelerator",
+        f"git+{ACCELERATORS_GIT_URL}#subdirectory=ClaudeSDKLoggerAccelerator",
+    ]
+
     missing = []
-    for package_path in packages:
-        if not Path(package_path).exists():
-            missing.append(package_path)
+    for local_path, git_spec in zip(local_packages, git_specs):
+        if local_path.exists():
+            subprocess.run(
+                [python_exe, "-m", "pip", "install", "-e", str(local_path), "--quiet"],
+                check=True,
+            )
             continue
+        try:
+            subprocess.run(
+                [python_exe, "-m", "pip", "install", git_spec, "--quiet"],
+                check=True,
+            )
+        except subprocess.CalledProcessError:
+            if not allow_missing_accelerators:
+                raise
+            missing.append(git_spec)
+
+    # This repo's own packages: editable install if cloned locally,
+    # otherwise install straight from GitHub.
+    if REPO_ROOT.exists() and (REPO_ROOT / "pyproject.toml").exists():
         subprocess.run(
-            [python_exe, "-m", "pip", "install", "-e", package_path, "--quiet"],
+            [python_exe, "-m", "pip", "install", "-e", str(REPO_ROOT), "--quiet"], check=True
+        )
+        subprocess.run(
+            [python_exe, "-m", "pip", "install", "-e", str(REPO_ROOT / "model-router"), "--quiet"],
+            check=True,
+        )
+    else:
+        subprocess.run(
+            [python_exe, "-m", "pip", "install", f"git+{ORCHESTRATION_GIT_URL}", "--quiet"],
+            check=True,
+        )
+        subprocess.run(
+            [
+                python_exe,
+                "-m",
+                "pip",
+                "install",
+                f"git+{ORCHESTRATION_GIT_URL}#subdirectory=model-router",
+                "--quiet",
+            ],
             check=True,
         )
     return missing
@@ -262,23 +323,24 @@ def cmd_new(args: argparse.Namespace) -> None:
         else ACCELERATORS_ROOT
     )
     print("Installing accelerator packages...")
-    missing = _install_accelerators(python_exe, accelerators_root)
+    try:
+        missing = _install_accelerators(python_exe, accelerators_root, args.allow_missing_accelerators)
+    except subprocess.CalledProcessError as exc:
+        print(f"\nError: failed to install accelerator packages: {exc}", file=sys.stderr)
+        print(
+            "Pass --accelerators-path to use a local checkout, or "
+            "--allow-missing-accelerators to scaffold without them.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     if missing:
         print(
-            "\nWarning: the following accelerator packages were NOT installed "
-            "(source not found):",
+            "\nWarning: the following accelerator packages could not be installed "
+            "(from local checkout or GitHub):",
             file=sys.stderr,
         )
-        for package_path in missing:
-            print(f"  - {package_path}", file=sys.stderr)
-        print(
-            f"Pass --accelerators-path to point at the '{accelerators_root.name}' "
-            "sibling repo, or clone it alongside this repo.",
-            file=sys.stderr,
-        )
-        if not args.allow_missing_accelerators:
-            print("Aborting (pass --allow-missing-accelerators to scaffold anyway).", file=sys.stderr)
-            sys.exit(1)
+        for spec in missing:
+            print(f"  - {spec}", file=sys.stderr)
 
     print(f"\nScaffolded project '{args.project_name}' at {dest}")
     print("Created:")

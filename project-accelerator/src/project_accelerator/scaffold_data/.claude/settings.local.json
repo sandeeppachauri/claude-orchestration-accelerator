@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls \"D:\\\\Claude\\\\Accelerators\" 2>/dev/null; echo \"---\"; ls \"D:\\\\Claude\\\\claude-orchestration-accelerator\" 2>/dev/null)",
+      "Read(//d/Claude/Accelerators/**)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('src/project_accelerator/cli.py'\\).read\\(\\)\\)\")",
+      "Bash(pip show *)",
+      "Bash(python -c \"import project_accelerator\")",
+      "Bash(rm -rf \"C:/Users/SANDEE~1/AppData/Local/Temp/claude/d--Claude-claude-orchestration-accelerator/4d7694a0-a39d-43f1-bd47-e971b409fee2/scratchpad/cpa_test_dest\")",
+      "Bash(python -m pytest project-accelerator -q)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('project-accelerator/src/project_accelerator/cli.py'\\).read\\(\\)\\)\")",
+      "Bash(rm -rf \"C:/Users/SANDEE~1/AppData/Local/Temp/claude/d--Claude-claude-orchestration-accelerator/4d7694a0-a39d-43f1-bd47-e971b409fee2/scratchpad/cpa_test2\" \"C:/Users/SANDEE~1/AppData/Local/Temp/claude/d--Claude-claude-orchestration-accelerator/4d7694a0-a39d-43f1-bd47-e971b409fee2/scratchpad/cpa_test3\")",
+      "Bash(python -m pytest project-accelerator model-router . -q)",
+      "Bash(mkdir -p project-accelerator/src/project_accelerator/scaffold_data/prompts)",
+      "Bash(cp CLAUDE.md CLAUDE.local.md process_registry.yaml project-accelerator/src/project_accelerator/scaffold_data/)",
+      "Bash(cp -r .claude project-accelerator/src/project_accelerator/scaffold_data/.claude)",
+      "Bash(cp prompts/*.yaml project-accelerator/src/project_accelerator/scaffold_data/prompts/)"
+    ]
+  }
+}

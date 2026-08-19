@@ -124,12 +124,34 @@ with `--venv`.
 
 By default `cpa new` looks for the sibling `Accelerators` repo (containing
 `claude-auth-accelerator` and `ClaudeSDKLoggerAccelerator`) at
-`../Accelerators` relative to this repo. On a machine where that repo
-isn't checked out there, `cpa new` now aborts with a warning instead of
-silently scaffolding a partial install — pass `--accelerators-path <dir>`
-to point at it, or `--allow-missing-accelerators` to proceed without those
-two packages. See the root `requirements.txt` for the pip prereqs needed
-to bootstrap a fresh environment before running `cpa new` at all.
+`../Accelerators` relative to this repo. When that (or this repo itself)
+isn't checked out locally, it falls back to installing each accelerator
+straight from GitHub instead — so `cpa` works with no local clone at all
+(see "Zero-clone install" below). `--accelerators-path <dir>` points at a
+local checkout instead of the default, and `--allow-missing-accelerators`
+tolerates a failed install of `claude-auth-accelerator`/
+`ClaudeSDKLoggerAccelerator` specifically (this repo's own two packages
+are never optional). See the root `requirements.txt` for the pip prereqs
+needed to bootstrap a fresh environment before running `cpa new`.
+
+### Zero-clone install
+
+No local checkout needed — `cpa` itself, and everything it scaffolds, can
+be installed straight from this GitHub repo:
+
+```bash
+# one-off, no persistent install (uses pipx; ephemeral venv):
+pipx run --spec "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=project-accelerator" cpa new --project-name my-app
+
+# or install cpa itself, then run it as usual:
+pip install "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=project-accelerator"
+cpa new --project-name my-app
+```
+
+Both pull `claude-orchestration-accelerator` and `claude-model-router-accelerator`
+from this repo automatically (declared as git dependencies), and `cpa new`
+installs `claude-auth-accelerator`/`ClaudeSDKLoggerAccelerator` from the
+`Accelerators` repo the same way.
 
 This generates, under `./my-app/` (or `<path>/my-app/` with `--path`):
 

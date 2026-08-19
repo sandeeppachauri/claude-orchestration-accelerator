@@ -10,4 +10,6 @@ venv/
 .env
 CLAUDE.local.md
 .claude/settings.local.json
+!project-accelerator/src/project_accelerator/scaffold_data/CLAUDE.local.md
+!project-accelerator/src/project_accelerator/scaffold_data/.claude/settings.local.json
 *.log
