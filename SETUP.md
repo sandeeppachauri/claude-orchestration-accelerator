@@ -17,7 +17,20 @@ live in the sibling repo `D:\Claude\Accelerators` and are **not** on PyPI.
   needed for live model calls — everything else (install, unit tests,
   scaffold) works without one
 
-## 2. One-time environment setup
+Two setup paths exist — pick one:
+
+- **Path A — Manual (local clone)**: you have both this repo and the
+  sibling `D:\Claude\Accelerators` repo checked out; installs everything
+  editable from local paths. Use this for active development on any of
+  the four packages.
+- **Path B — Zero-clone**: no local checkout of anything needed; `cpa`
+  and everything it scaffolds pull straight from GitHub. Use this to just
+  *use* the tooling (e.g. scaffold a new project) without cloning source.
+
+Steps 2–5 below are forked by path; steps 6 onward apply to whichever path
+you took (Path B skips straight to step 8).
+
+## 2A. One-time environment setup — Manual path
 
 From `D:\Claude\claude-orchestration-accelerator`:
 
@@ -26,21 +39,17 @@ python -m venv .venv
 .venv\Scripts\activate        # PowerShell: .venv\Scripts\Activate.ps1
 ```
 
-## 3. Install the two pre-existing accelerators
+## 3A. Install the two pre-existing accelerators — Manual path
 
-Two ways to get these — pick one. Both install the same packages
-(`auth_accelerator`, `sdk_logger_accelerator`); the git route is what
-someone who only `git clone`s this repo (without the sibling `Accelerators`
-checkout) should use.
-
-**Option A — local path (editable), if you have `D:\Claude\Accelerators` checked out:**
+Requires the sibling repo checked out at `D:\Claude\Accelerators`:
 
 ```bash
 pip install -e "D:\Claude\Accelerators\claude-auth-accelerator"
 pip install -e "D:\Claude\Accelerators\ClaudeSDKLoggerAccelerator"
 ```
 
-**Option B — direct from git (no local checkout needed):**
+No local checkout of `Accelerators`? Install those two straight from git
+instead (still Path A, just skip cloning that one repo):
 
 ```bash
 pip install "git+https://github.com/sandeeppachauri/Accelerators.git#subdirectory=claude-auth-accelerator"
@@ -50,9 +59,9 @@ pip install "git+https://github.com/sandeeppachauri/Accelerators.git#subdirector
 Pin a specific commit/tag/branch by appending `@<ref>` before the `#`, e.g.
 `git+https://github.com/sandeeppachauri/Accelerators.git@v0.2.0#subdirectory=claude-auth-accelerator`.
 
-## 4. Install the three packages in this repo (editable, dependency order)
+## 4A. Install the three packages in this repo — Manual path
 
-Order matters — each depends on the one before it:
+Editable install, in dependency order (each depends on the one before it):
 
 ```bash
 pip install -e ".[dev]"                                   # claude-orchestration-accelerator (repo root)
@@ -64,14 +73,22 @@ pip install -e "project-accelerator[dev]"                  # claude-project-acce
 (`pip install -e ".[dev,logging]"`) since `claude-sdk-logger-accelerator`
 isn't a hard dependency — install it if you want tracing wired automatically.
 
-## 5. Verify install
+## 5A. Verify install — Manual path
 
 ```bash
 python -c "import orchestration_accelerator, model_router_accelerator, project_accelerator; print('ok')"
 cpa --help
 ```
 
-## 6. Run the test suite
+## 2B–5B. Zero-clone path
+
+No venv, no clone, no manual pip sequence — jump straight to step 8's
+"Zero-clone install" section, which covers installing/running `cpa` via
+`pipx run` or a single `pip install` from GitHub. Everything it scaffolds
+(the four accelerator packages) is pulled automatically. Come back to
+steps 9–12 afterward.
+
+## 6. Run the test suite (Manual path)
 
 Each package has its own tests; all mock network/API calls, so no
 credential is required:
@@ -91,7 +108,7 @@ pytest . model-router project-accelerator
 Expected: 14 passed (root) + 10 passed (model-router) + 9 passed
 (project-accelerator).
 
-## 7. Run the examples
+## 7. Run the examples (Manual path)
 
 Each package ships a runnable example under its own `examples/` dir. The
 registry/prompting example needs no credential; the other three make real
@@ -106,7 +123,7 @@ python model-router/examples/run_router_example.py                 # model-route
 python project-accelerator/examples/run_execute_example.py         # project_accelerator entry point, real model calls
 ```
 
-## 8. Scaffold a new project with the CLI
+## 8. Scaffold a new project with the CLI (both paths)
 
 ```bash
 cpa new --project-name my-app --no-venv     # installs into the currently active env
