@@ -112,9 +112,17 @@ python project-accelerator/examples/run_execute_example.py         # project_acc
 cpa new --project-name my-app --no-venv     # installs into the currently active env
 # or
 cpa new --project-name my-app --venv        # creates my-app/.venv and installs there
+# or
+cpa new --project-name my-app --path /some/other/dir --venv   # scaffold elsewhere
+# or
+cpa new --project-name my-app --python /path/to/existing/venv/bin/python  # reuse an existing env
 ```
 
-This generates, under `./my-app/`:
+`--path` defaults to the current directory. `--python` installs into an
+existing interpreter/venv instead of creating one and cannot be combined
+with `--venv`.
+
+This generates, under `./my-app/` (or `<path>/my-app/` with `--path`):
 
 - `prompts/*.yaml`, `process_registry.yaml` (pre-populated with the
   `ticketClassification` and `onboarding` sample processes)

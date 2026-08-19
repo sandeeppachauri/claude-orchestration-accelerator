@@ -217,7 +217,13 @@ def cmd_new(args: argparse.Namespace) -> None:
         print("Error: --project-name is required.", file=sys.stderr)
         sys.exit(1)
 
-    dest = Path.cwd() / args.project_name
+    if args.python and args.venv:
+        print("Error: --python cannot be combined with --venv.", file=sys.stderr)
+        sys.exit(1)
+
+    base = Path(args.path).expanduser().resolve() if args.path else Path.cwd()
+    base.mkdir(parents=True, exist_ok=True)
+    dest = base / args.project_name
     dest.mkdir(parents=True, exist_ok=True)
 
     _copy_reference_skeleton(dest)
@@ -228,8 +234,13 @@ def cmd_new(args: argparse.Namespace) -> None:
     _write_pipeline_runner(dest)
     _write_sample_test(dest)
 
-    python_exe = sys.executable
-    if args.venv:
+    if args.python:
+        python_exe = str(Path(args.python).expanduser().resolve())
+        if not Path(python_exe).exists():
+            print(f"Error: --python interpreter not found: {python_exe}", file=sys.stderr)
+            sys.exit(1)
+        print(f"Using existing interpreter at {python_exe}")
+    elif args.venv:
         venv_dir = dest / ".venv"
         venv.create(venv_dir, with_pip=True)
         python_exe = str(
@@ -238,6 +249,8 @@ def cmd_new(args: argparse.Namespace) -> None:
             )
         )
         print(f"Created virtual environment at {venv_dir}")
+    else:
+        python_exe = sys.executable
 
     print("Installing accelerator packages...")
     _install_accelerators(python_exe)
@@ -255,6 +268,10 @@ def main() -> None:
 
     new_parser = subparsers.add_parser("new", help="Scaffold a new accelerator-based project")
     new_parser.add_argument("--project-name", required=True, help="Name of the new project")
+    new_parser.add_argument(
+        "--path",
+        help="Parent directory to scaffold into (default: current directory)",
+    )
     venv_group = new_parser.add_mutually_exclusive_group()
     venv_group.add_argument(
         "--venv", dest="venv", action="store_true", help="Create a fresh virtual environment"
@@ -264,6 +281,11 @@ def main() -> None:
         dest="venv",
         action="store_false",
         help="Install into the currently active environment",
+    )
+    new_parser.add_argument(
+        "--python",
+        help="Path to an existing python interpreter (e.g. an existing venv) to install into; "
+        "cannot be combined with --venv",
     )
     new_parser.set_defaults(venv=True, func=cmd_new)
 

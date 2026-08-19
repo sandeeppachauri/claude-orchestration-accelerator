@@ -33,6 +33,8 @@ only place step flow is controlled.
 ```bash
 pip install claude-project-accelerator
 cpa new --project-name my-app --venv
+cpa new --project-name my-app --path /some/other/dir --venv
+cpa new --project-name my-app --python /path/to/existing/venv/bin/python
 ```
 
 Generates a starter project: `prompts/*.yaml`, `process_registry.yaml`,
@@ -41,6 +43,11 @@ full reference Claude Code project skeleton (one-time snapshot copy from
 this repo's root), and `tests/test_sample_pipeline.py`. Installs all four
 accelerators into the chosen venv (or the active environment with
 `--no-venv`).
+
+- `--path <dir>` -- parent directory to scaffold into (default: current
+  directory). The project is created at `<dir>/<project-name>`.
+- `--python <exe>` -- install into an existing interpreter/venv instead of
+  creating a new one. Mutually exclusive with `--venv`.
 
 ## Tests
 
