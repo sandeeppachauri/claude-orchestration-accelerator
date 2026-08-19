@@ -26,10 +26,20 @@ def _looks_like_rate_limit_or_overload(exc: Exception) -> bool:
 
 
 async def call_agent_sdk(
-    *, model: str, system_prompt: str, user_content: str, environment: str, max_turns: int = 1
+    *,
+    model: str,
+    system_prompt: str,
+    user_content: str,
+    environment: str,
+    max_turns: int = 1,
+    **extra: Any,
 ) -> str:
     """Runs one query via claude_agent_sdk, resolving auth through
-    claude-auth-accelerator's build_options()."""
+    claude-auth-accelerator's build_options(). Any extra keyword (e.g.
+    `thinking`, `permission_mode`) passes straight through to
+    build_options()/ClaudeAgentOptions -- this is what lets
+    process_registry.yaml set per-step capabilities without touching
+    accelerator code."""
     from claude_agent_sdk import AssistantMessage, TextBlock, query
 
     from auth_accelerator import build_options
@@ -39,6 +49,7 @@ async def call_agent_sdk(
         model=model,
         max_turns=max_turns,
         system_prompt=system_prompt,
+        **extra,
     )
 
     text = ""
@@ -56,10 +67,19 @@ async def call_agent_sdk(
 
 
 async def call_messages_api(
-    *, model: str, system_prompt: str, user_content: str, environment: str, max_tokens: int = 1024
+    *,
+    model: str,
+    system_prompt: str,
+    user_content: str,
+    environment: str,
+    max_tokens: int = 1024,
+    **extra: Any,
 ) -> str:
     """Calls anthropic's Messages API directly, resolving auth through
-    claude-auth-accelerator's build_api_credential()."""
+    claude-auth-accelerator's build_api_credential(). Any extra keyword
+    (e.g. `temperature`, `top_p`, `thinking`) passes straight through to
+    `messages.create()` -- this is what lets process_registry.yaml set
+    per-step capabilities without touching accelerator code."""
     import anthropic
 
     from auth_accelerator import build_api_credential
@@ -73,6 +93,7 @@ async def call_messages_api(
             max_tokens=max_tokens,
             system=system_prompt,
             messages=[{"role": "user", "content": user_content}],
+            **extra,
         )
     except Exception as exc:  # noqa: BLE001
         if _looks_like_rate_limit_or_overload(exc):

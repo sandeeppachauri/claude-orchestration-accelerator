@@ -33,6 +33,9 @@ SKELETON_ENTRIES = [
     "CLAUDE.md",
     "CLAUDE.local.md",
     ".claude",
+    ".mcp.json",
+    "docs",
+    "scripts",
 ]
 
 
@@ -157,7 +160,11 @@ a running pipeline.
   which model is allowed to be hardcoded in application code -- a payload
   can only select a process (and optionally narrow to one step), never
   reorder or subset the `steps` list. Edit this file to add a process or
-  change a step's model/fallback.
+  change a step's model/fallback. Any other key on a step (`max_turns`,
+  `thinking`, `temperature`, `top_p`, `permission_mode`, ...) is a
+  capability passthrough -- it flows untouched to the model call, so you
+  can tune a step's behavior from this file alone, no code change. See
+  `.claude/rules/process-registry.md` for the full schema.
 
 - **`prompts/*.yaml`** -- the prompt templates each registry step points
   at by name. They're separate files (not inline in the registry) so
@@ -170,8 +177,10 @@ a running pipeline.
   don't require touching code.
 
 - **`logger_config.json`** -- turns the default JSON-line tracing wrapper's
-  8 logging scopes on/off. Exists so you can dial logging verbosity per
-  deployment without code changes.
+  8 logging scopes on/off. Logging is on by default -- `execute()` loads
+  this file automatically before its first log call, so editing
+  `enabled_scopes` here takes effect with no code change. Trace lines
+  land under `./logs/trace.log` (path/rotation also configurable here).
 
 - **`pipeline/run_pipeline.py`** -- a runnable script that reads a process
   name and input off `sys.argv` and calls `execute()` with no `"step"` key,
@@ -194,9 +203,29 @@ a running pipeline.
   file-by-file version.
 
 - **`CLAUDE.md` / `CLAUDE.local.md` / `.claude/`** -- the reference Claude
-  Code project skeleton (settings, skills, agents, rules), copied as a
-  one-time snapshot so this project has the same Claude Code conventions
-  as `claude-orchestration-accelerator` itself.
+  Code project skeleton (settings, hooks, skills, agents, rules,
+  commands), copied as a one-time snapshot so this project has the same
+  Claude Code conventions as `claude-orchestration-accelerator` itself.
+
+- **`.claude/commands/`** -- slash commands for this project:
+  `/test-all` (run the suite), `/run-pipeline` (drive `run_pipeline.py`),
+  `/bootstrap` (add a new process).
+
+- **`.claude/plugins/manifest.json`** -- empty plugin manifest; add
+  entries here if you package project-specific skills/agents as an
+  installable plugin later.
+
+- **`.mcp.json`** -- empty MCP server registry. Add servers here (and to
+  `.claude/settings.json`'s `allowedMcpServers`) as you wire in external
+  tools.
+
+- **`docs/architecture.md`** -- one-page summary of how `execute()`,
+  the registry, and the two backends fit together; a shorter companion
+  to this file's file-by-file detail.
+
+- **`scripts/smoke_test.sh`** -- runs the unit test, then a real
+  pipeline call if `ANTHROPIC_API_KEY` is set. Same steps as "Getting
+  started" above, scripted.
 """
     )
 
@@ -211,6 +240,11 @@ run_pipeline.py
 
 Reads the step list and per-step config from process_registry.yaml --
 nothing here is a hardcoded tuple or dict. Run: python pipeline/run_pipeline.py
+
+Logging is on by default -- no setup needed. execute() logs every turn
+via orchestration_accelerator's logging wrapper, configured from this
+project's own logger_config.json (edit that file's "enabled_scopes" to
+turn scopes on/off). Trace lines land under ./logs/trace.log.
 """
 
 import sys
@@ -240,6 +274,7 @@ def main() -> None:
     result = run(process_name, input_text)
     for step_name, output in result.items():
         print(f"[{step_name}] -> {output!r}")
+    print("Trace logged to ./logs/trace.log (see logger_config.json).")
 
 
 if __name__ == "__main__":
@@ -259,6 +294,11 @@ Sample class wrapping the library entry point exactly as shown in
 SETUP.md step 11 ("Using the library entry point directly"). Needs a
 real credential (ANTHROPIC_API_KEY env var or an ambient `claude login`
 OAuth session) to actually call a model. Run: python examples/sample_usage.py
+
+Logging is on by default -- execute() logs every turn via
+orchestration_accelerator's logging wrapper, configured from this
+project's own logger_config.json. No setup needed; trace lines land
+under ./logs/trace.log.
 """
 
 from project_accelerator import execute
@@ -285,6 +325,7 @@ def main() -> None:
     classifier = TicketClassifier()
     result = classifier.classify("sample ticket text")
     print(result)
+    print("Trace logged to ./logs/trace.log (see logger_config.json).")
 
 
 if __name__ == "__main__":
@@ -506,6 +547,7 @@ def cmd_new(args: argparse.Namespace) -> None:
     print("  pipeline/run_pipeline.py, examples/sample_usage.py, tests/test_sample_pipeline.py")
     print("  README.md, HOWTO.md")
     print("  CLAUDE.md, CLAUDE.local.md, .claude/ (reference skeleton)")
+    print("  .mcp.json, docs/architecture.md, scripts/smoke_test.sh")
 
 
 def main() -> None:

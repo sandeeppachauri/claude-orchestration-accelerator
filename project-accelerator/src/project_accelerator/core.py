@@ -20,6 +20,7 @@ validation is plain dict-key checks, no JSON Schema (per plan Section 6).
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from pathlib import Path
 from typing import Any
@@ -57,6 +58,33 @@ def _validate_payload(payload: dict[str, Any]) -> None:
             f"payload['backend'] must be one of {sorted(VALID_BACKENDS)}, "
             f"got {payload['backend']!r}"
         )
+
+
+_logging_configured_from_project = False
+
+
+def _ensure_project_logging_configured() -> None:
+    """A scaffolded project's own logger_config.json (written by `cpa new`,
+    editable to turn scopes on/off) would otherwise sit unused --
+    orchestration_accelerator's logging wrapper configures itself from its
+    own bundled default the first time log() is called. Load the
+    project's file into that same wrapper once per process, before the
+    first log() call, so editing logger_config.json actually takes
+    effect. Best-effort: falls back to the wrapper's own default on any
+    read/parse error, same as having no project file at all."""
+    global _logging_configured_from_project
+    if _logging_configured_from_project:
+        return
+    _logging_configured_from_project = True
+    project_config_path = Path.cwd() / "logger_config.json"
+    if not project_config_path.exists():
+        return
+    try:
+        from orchestration_accelerator.logging import configure_default_logging
+
+        configure_default_logging(json.loads(project_config_path.read_text()))
+    except Exception:
+        pass
 
 
 def _resolve_registry_and_prompts_dir() -> tuple[Path, Path]:
@@ -112,6 +140,15 @@ async def _run_one_step(
     prompt_file = step_config.get("prompt")
     model = step_config["model"]
     fallback = step_config.get("fallback", [])
+    # Any other key in the step's process_registry.yaml block (max_turns,
+    # thinking, temperature, top_p, permission_mode, ...) passes straight
+    # through to the model call -- lets a step's capabilities be tuned
+    # from config alone, no accelerator code change required.
+    capabilities = {
+        k: v
+        for k, v in step_config.items()
+        if k not in ("prompt", "model", "fallback", "system_prompt")
+    }
 
     if prompt_file is not None:
         pm = PromptManager(prompts_dir=prompts_dir)
@@ -128,9 +165,11 @@ async def _run_one_step(
         user_content=input_text,
         backend=backend,
         environment=environment,
+        **capabilities,
     )
 
     try:
+        _ensure_project_logging_configured()
         from orchestration_accelerator.logging import log
 
         await log(

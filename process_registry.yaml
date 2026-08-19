@@ -6,6 +6,7 @@ ticketClassification:
     prompt: classify.yaml
     model: claude-haiku-4-5-20251001
     fallback: [claude-sonnet-5, claude-opus-4-8]
+    max_turns: 1  # capability passthrough -- any extra key here reaches the model call untouched
   extract:
     prompt: extract_v2.yaml
     model: claude-sonnet-5
