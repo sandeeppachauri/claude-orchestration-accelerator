@@ -82,27 +82,121 @@ def _write_readme(dest: Path, project_name: str) -> None:
 Scaffolded by `cpa new --project-name {project_name}` from
 `claude-project-accelerator`.
 
+## Structure
+
+- `process_registry.yaml` -- single source of truth for each process's step
+  order and per-step `{{prompt, model, fallback}}` configuration.
+- `prompts/*.yaml` -- prompt templates referenced by the registry.
+- `pipeline/run_pipeline.py` -- sample script driving `execute()`.
+- `examples/sample_usage.py` -- sample `TicketClassifier` class wrapping
+  `execute()` the way SETUP.md step 11 shows it used directly.
+- `.env` -- `ENVIRONMENT` (default environment) and `DEFAULT_MODEL`
+  (fallback model when a `(process, step)` isn't in the registry).
+- `logger_config.json` -- default logging wrapper config.
+- `tests/test_sample_pipeline.py` -- smoke test for the sample process.
+
+Two sample processes ship out of the box: `ticketClassification`
+(`classify` -> `extract` -> `respond`) and `onboarding` (`welcome` ->
+`verify` -> `finalize`). Edit `process_registry.yaml` and `prompts/*.yaml`
+to add your own, or remove the samples once you've replaced them.
+
 ## Run
 
 ```python
 from project_accelerator import execute
 
 result = execute({{
-    "process": "ticketClassification",
+    "process": "ticketClassification",  # any process defined in process_registry.yaml
     "input": "some ticket text",
-    "backend": "agent_sdk",
+    "backend": "agent_sdk",             # "agent_sdk" | "messages_api"
 }})
 ```
 
-`process_registry.yaml` is the single source of truth for step order and
-per-step `{{prompt, model, fallback}}` configuration. `.env` carries
-`ENVIRONMENT` and `DEFAULT_MODEL`.
+The payload's `"process"` (and optional `"step"`) select what to run;
+`process_registry.yaml` alone controls step order and per-step config --
+the payload can never reorder, skip, or subset a process's `steps` list.
 
 ## Tests
 
 ```bash
 pytest tests/test_sample_pipeline.py
 ```
+
+See `HOWTO.md` for a file-by-file breakdown and getting-started steps.
+"""
+    )
+
+
+def _write_howto(dest: Path, project_name: str) -> None:
+    (dest / "HOWTO.md").write_text(
+        f"""# How to use {project_name}
+
+What each generated file is for, and how to get from a fresh checkout to
+a running pipeline.
+
+## Getting started
+
+1. Create/activate a virtualenv and make sure the four accelerator
+   packages are installed into it (`cpa new` already did this for the
+   environment you scaffolded into -- re-run it with `--python` pointed
+   at a different interpreter if you need another one).
+2. Set a credential: `ANTHROPIC_API_KEY` env var, or run `claude login`
+   for an ambient OAuth session. Not needed for `pytest` (everything is
+   mocked) -- only for actually calling a model.
+3. Run the smoke test: `pytest tests/test_sample_pipeline.py`.
+4. Run the sample pipeline end to end:
+   `python pipeline/run_pipeline.py ticketClassification "sample ticket text"`.
+5. Open `process_registry.yaml` and `prompts/*.yaml` and start replacing
+   the sample `ticketClassification`/`onboarding` processes with your own.
+
+## File-by-file
+
+- **`process_registry.yaml`** -- the single source of truth for every
+  process's step order and per-step `{{prompt, model, fallback}}` config.
+  It's here because nothing about which steps run, in what order, or with
+  which model is allowed to be hardcoded in application code -- a payload
+  can only select a process (and optionally narrow to one step), never
+  reorder or subset the `steps` list. Edit this file to add a process or
+  change a step's model/fallback.
+
+- **`prompts/*.yaml`** -- the prompt templates each registry step points
+  at by name. They're separate files (not inline in the registry) so
+  prompt text can be reviewed/edited independently of step wiring.
+
+- **`.env`** -- `ENVIRONMENT` (the default environment `execute()` resolves
+  auth for when a payload doesn't specify one) and `DEFAULT_MODEL` (the
+  model used for any `(process, step)` not explicitly listed in
+  `process_registry.yaml`). Exists so environment/default-model changes
+  don't require touching code.
+
+- **`logger_config.json`** -- turns the default JSON-line tracing wrapper's
+  8 logging scopes on/off. Exists so you can dial logging verbosity per
+  deployment without code changes.
+
+- **`pipeline/run_pipeline.py`** -- a runnable script that reads a process
+  name and input off `sys.argv` and calls `execute()` with no `"step"` key,
+  so every step in `process_registry.yaml`'s order runs. It's the
+  fastest way to exercise a whole process from the command line:
+  `python pipeline/run_pipeline.py <process> "<input text>"`.
+
+- **`examples/sample_usage.py`** -- a `TicketClassifier` class showing
+  `execute()` used directly from Python (as opposed to the CLI-style
+  `run_pipeline.py`), including the optional `"step"` and `"environment"`
+  keys. Copy this pattern when you need to call a process from your own
+  application code.
+
+- **`tests/test_sample_pipeline.py`** -- a smoke test for the sample
+  process that mocks the model call, so it runs without any credential.
+  Exists as a template for testing your own processes the same way.
+
+- **`README.md`** -- short orientation: what got scaffolded and the
+  minimal run/test commands. This file (`HOWTO.md`) is the longer,
+  file-by-file version.
+
+- **`CLAUDE.md` / `CLAUDE.local.md` / `.claude/`** -- the reference Claude
+  Code project skeleton (settings, skills, agents, rules), copied as a
+  one-time snapshot so this project has the same Claude Code conventions
+  as `claude-orchestration-accelerator` itself.
 """
     )
 
@@ -146,6 +240,51 @@ def main() -> None:
     result = run(process_name, input_text)
     for step_name, output in result.items():
         print(f"[{step_name}] -> {output!r}")
+
+
+if __name__ == "__main__":
+    main()
+'''
+    )
+
+
+def _write_sample_usage(dest: Path) -> None:
+    examples_dir = dest / "examples"
+    examples_dir.mkdir(exist_ok=True)
+    (examples_dir / "sample_usage.py").write_text(
+        '''"""
+sample_usage.py
+
+Sample class wrapping the library entry point exactly as shown in
+SETUP.md step 11 ("Using the library entry point directly"). Needs a
+real credential (ANTHROPIC_API_KEY env var or an ambient `claude login`
+OAuth session) to actually call a model. Run: python examples/sample_usage.py
+"""
+
+from project_accelerator import execute
+
+
+class TicketClassifier:
+    """Thin wrapper around execute() for the ticketClassification process."""
+
+    def __init__(self, environment: str = "local", backend: str = "agent_sdk") -> None:
+        self.environment = environment
+        self.backend = backend
+
+    def classify(self, input_text: str) -> dict:
+        return execute({
+            "process": "ticketClassification",
+            "step": "classify",          # optional -- omit to run the full process
+            "input": input_text,
+            "environment": self.environment,  # optional -- falls back to .env's ENVIRONMENT
+            "backend": self.backend,     # "agent_sdk" | "messages_api"
+        })
+
+
+def main() -> None:
+    classifier = TicketClassifier()
+    result = classifier.classify("sample ticket text")
+    print(result)
 
 
 if __name__ == "__main__":
@@ -296,7 +435,9 @@ def cmd_new(args: argparse.Namespace) -> None:
     _write_env_file(dest)
     _write_logger_config(dest)
     _write_readme(dest, args.project_name)
+    _write_howto(dest, args.project_name)
     _write_pipeline_runner(dest)
+    _write_sample_usage(dest)
     _write_sample_test(dest)
 
     if args.python:
@@ -345,7 +486,8 @@ def cmd_new(args: argparse.Namespace) -> None:
     print(f"\nScaffolded project '{args.project_name}' at {dest}")
     print("Created:")
     print("  prompts/*.yaml, process_registry.yaml, .env, logger_config.json")
-    print("  pipeline/run_pipeline.py, tests/test_sample_pipeline.py, README.md")
+    print("  pipeline/run_pipeline.py, examples/sample_usage.py, tests/test_sample_pipeline.py")
+    print("  README.md, HOWTO.md")
     print("  CLAUDE.md, CLAUDE.local.md, .claude/ (reference skeleton)")
 
 
