@@ -43,15 +43,29 @@ python -m venv .venv
 
 ## 3A. Install the two pre-existing accelerators — Manual path
 
-Requires the sibling repo checked out at `D:\Claude\Accelerators`:
+Neither package is on PyPI — their own READMEs (`claude-auth-accelerator`,
+`ClaudeSDKLoggerAccelerator`) only document a relative editable install run
+from inside a clone of the `Accelerators` repo:
+
+```bash
+git clone https://github.com/sandeeppachauri/Accelerators.git D:\Claude\Accelerators
+cd D:\Claude\Accelerators
+pip install -e claude-auth-accelerator
+pip install -e ClaudeSDKLoggerAccelerator
+cd D:\Claude\claude-orchestration-accelerator
+```
+
+Already have `D:\Claude\Accelerators` checked out? Skip the clone and use
+the absolute path instead:
 
 ```bash
 pip install -e "D:\Claude\Accelerators\claude-auth-accelerator"
 pip install -e "D:\Claude\Accelerators\ClaudeSDKLoggerAccelerator"
 ```
 
-No local checkout of `Accelerators`? Install those two straight from git
-instead (still Path A, just skip cloning that one repo):
+Don't want to clone `Accelerators` at all? Neither upstream README
+documents a git-URL form, but pip supports one via `#subdirectory=`, so
+this works as an equivalent, unofficial fallback (still Path A):
 
 ```bash
 pip install "git+https://github.com/sandeeppachauri/Accelerators.git#subdirectory=claude-auth-accelerator"
