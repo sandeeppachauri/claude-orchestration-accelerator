@@ -388,13 +388,19 @@ def _install_accelerators(
             missing.append(git_spec)
 
     # This repo's own packages: editable install if cloned locally,
-    # otherwise install straight from GitHub.
+    # otherwise install straight from GitHub. project-accelerator itself
+    # must be installed too -- the scaffolded pipeline/examples import
+    # `project_accelerator`, not just its dependencies.
     if REPO_ROOT.exists() and (REPO_ROOT / "pyproject.toml").exists():
         subprocess.run(
             [python_exe, "-m", "pip", "install", "-e", str(REPO_ROOT), "--quiet"], check=True
         )
         subprocess.run(
             [python_exe, "-m", "pip", "install", "-e", str(REPO_ROOT / "model-router"), "--quiet"],
+            check=True,
+        )
+        subprocess.run(
+            [python_exe, "-m", "pip", "install", "-e", str(REPO_ROOT / "project-accelerator"), "--quiet"],
             check=True,
         )
     else:
@@ -409,6 +415,17 @@ def _install_accelerators(
                 "pip",
                 "install",
                 f"git+{ORCHESTRATION_GIT_URL}#subdirectory=model-router",
+                "--quiet",
+            ],
+            check=True,
+        )
+        subprocess.run(
+            [
+                python_exe,
+                "-m",
+                "pip",
+                "install",
+                f"git+{ORCHESTRATION_GIT_URL}#subdirectory=project-accelerator",
                 "--quiet",
             ],
             check=True,
