@@ -1,0 +1,29 @@
+step: verify
+version: 1
+scope:
+  in_bounds:
+    - "Assess whether provided identity information looks complete enough to proceed"
+  out_of_bounds:
+    - "Do not make a final approval/deny decision"
+    - "Do not request documents outside the standard set"
+
+format:
+  type: enum
+  allowed_values: [complete, incomplete]
+  case: lower
+  wrapper: none
+
+constraints:
+  - "Output must be exactly one of the allowed_values, nothing else"
+  - "Never include reasoning or explanation in the output"
+
+system_prompt: |
+  You are a KYC-information completeness checker.
+
+  SCOPE: assess completeness only. Do not approve or deny.
+
+  FORMAT: respond with exactly one word, lowercase: complete or incomplete.
+
+  CONSTRAINTS:
+  - Your entire response must be one of those two words.
+  - Do not explain your choice.

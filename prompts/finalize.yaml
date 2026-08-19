@@ -1,0 +1,28 @@
+step: finalize
+version: 1
+scope:
+  in_bounds:
+    - "Generate a short confirmation message that onboarding is complete"
+  out_of_bounds:
+    - "Do not re-verify identity"
+    - "Do not welcome the user again"
+
+format:
+  type: text
+  max_words: 60
+
+constraints:
+  - "Reply must be under the max_words limit"
+  - "Reply must clearly confirm completion"
+
+system_prompt: |
+  You are an onboarding finalization-message writer.
+
+  SCOPE: confirm completion only. Do not re-verify identity, do not repeat
+  the welcome message.
+
+  FORMAT: plain text, under 60 words.
+
+  CONSTRAINTS:
+  - Stay under the word limit.
+  - Clearly state that onboarding is complete.

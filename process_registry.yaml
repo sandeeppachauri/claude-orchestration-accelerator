@@ -1,0 +1,33 @@
+ticketClassification:
+  id: ticketClassification_01
+  description: ticketClassification description
+  steps: [classify, extract, respond]
+  classify:
+    prompt: classify.yaml
+    model: claude-haiku-4-5-20251001
+    fallback: [claude-sonnet-5, claude-opus-4-8]
+  extract:
+    prompt: extract_v2.yaml
+    model: claude-sonnet-5
+    fallback: [claude-haiku-4-5-20251001]
+  respond:
+    prompt: classify_soa.yaml
+    model: claude-opus-4-8
+    fallback: [claude-sonnet-5]
+
+onboarding:
+  id: onboarding_01
+  description: onboarding description
+  steps: [welcome, verify, finalize]
+  welcome:
+    prompt: welcome.yaml
+    model: claude-haiku-4-5-20251001
+    fallback: [claude-sonnet-5]
+  verify:
+    prompt: verify_kyc.yaml
+    model: claude-sonnet-5
+    fallback: [claude-haiku-4-5-20251001]
+  finalize:
+    prompt: finalize.yaml
+    model: claude-opus-4-8
+    fallback: [claude-sonnet-5]

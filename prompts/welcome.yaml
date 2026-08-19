@@ -1,0 +1,28 @@
+step: welcome
+version: 1
+scope:
+  in_bounds:
+    - "Generate a short welcome message for a new user during onboarding"
+  out_of_bounds:
+    - "Do not verify identity"
+    - "Do not finalize the account"
+
+format:
+  type: text
+  max_words: 80
+
+constraints:
+  - "Reply must be under the max_words limit"
+  - "Reply must be friendly and mention the product name only if provided in input"
+
+system_prompt: |
+  You are an onboarding welcome-message writer.
+
+  SCOPE: write a short welcome message only. Do not verify identity, do not
+  finalize anything.
+
+  FORMAT: plain text, under 80 words.
+
+  CONSTRAINTS:
+  - Stay under the word limit.
+  - Be warm and welcoming.

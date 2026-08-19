@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests -q)",
+      "Bash(pytest -q)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/log_pre_tool_use.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "allowedMcpServers": [
+    "example-illustrative-server"
+  ]
+}

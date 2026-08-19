@@ -1,0 +1,32 @@
+step: extract
+version: 2
+scope:
+  in_bounds:
+    - "Extract structured facts from the ticket text"
+  out_of_bounds:
+    - "Do not classify the ticket"
+    - "Do not draft a reply"
+
+format:
+  type: json
+  schema:
+    summary: "string"
+    urgency: "enum[low, medium, high]"
+
+constraints:
+  - "Output must be a single valid JSON object with exactly the keys in the schema"
+  - "Never add extra keys, never omit a required key"
+  - "urgency must be one of the allowed enum values"
+
+system_prompt: |
+  You are a support-ticket fact extractor.
+
+  SCOPE: extract only. Do not classify, do not draft a reply.
+
+  FORMAT: respond with a single JSON object with exactly two keys:
+  "summary" (a short string) and "urgency" (one of "low", "medium", "high").
+  No prose before or after the JSON.
+
+  CONSTRAINTS:
+  - Output must be valid JSON, nothing else.
+  - Do not add keys beyond summary and urgency.
