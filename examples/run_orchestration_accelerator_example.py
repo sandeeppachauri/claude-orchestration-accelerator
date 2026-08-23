@@ -5,7 +5,9 @@ Runnable example of orchestration_accelerator alone (registry + prompting),
 with no model-router / project-accelerator involved -- shows what this
 package provides on its own: process/step resolution from
 process_registry.yaml, and prompt loading + output-contract validation via
-PromptManager, against the repo's dummy config.
+PromptManager, against the repo's dummy config. Includes both a static
+example (classify.yaml, plain string input) and a dynamic/templated
+example (ticket_triage.yaml, {{key}} placeholders filled from a dict).
 
 Run from the repo root:
     python examples/run_orchestration_accelerator_example.py
@@ -39,6 +41,20 @@ def main() -> None:
         pm.validate_output("classify", cfg, "not-a-real-category")
     except Exception as exc:
         print(f"{type(exc).__name__}: {exc}")
+
+    print("\n--- prompting: dynamic/templated input via ticket_triage.yaml {{key}}s ---")
+    _, system_prompt, user_prompt = pm.render(
+        "ticket_triage",
+        {
+            "ticket_id": "T-1",
+            "customer_name": "Ada",
+            "customer_tier": "gold",
+            "body": "My invoice is wrong",
+        },
+        filename="ticket_triage.yaml",
+    )
+    print(f"rendered system_prompt: {system_prompt!r}")
+    print(f"rendered user_prompt: {user_prompt!r}")
 
 
 if __name__ == "__main__":

@@ -16,6 +16,17 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/remind_doc_sync.sh"
+          }
+        ]
+      }
     ]
   },
   "allowedMcpServers": [

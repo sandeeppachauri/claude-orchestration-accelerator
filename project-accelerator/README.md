@@ -89,6 +89,19 @@ See the root [`requirements.txt`](../requirements.txt) for the pip
 prereqs needed to bootstrap a brand-new environment before running `cpa
 new` or this repo's own test suite.
 
+## `process_registry.yaml` vs `batch_registry.yaml`
+
+`process_registry.yaml` is the model invocation layer -- step order,
+`prompt`, `model`, `fallback`, and any capability passthrough key. It is
+the *only* place model/prompt config lives. `batch_registry.yaml` carries
+only batch-run mechanics (`batch_id`, `process`/`step` reference,
+`environment`, `poll_interval_seconds`, `poll_timeout_seconds`) -- it has
+no model fields of its own and always resolves those through the
+`process_registry.yaml` step it points at. See the root
+[`README.md`](../README.md#process_registryyaml-vs-batch_registryyaml----what-goes-where)
+for the side-by-side table, and `.claude/rules/process-registry.md` /
+`.claude/rules/batch-registry.md` for full schemas.
+
 ## Tests
 
 ```bash

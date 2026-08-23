@@ -230,6 +230,18 @@ result the same way `execute()` does. `batch_registry.yaml` maps a
 examples: `examples/file_upload_example.py`,
 `examples/batch_processing_example.py`.
 
+### `process_registry.yaml` vs `batch_registry.yaml` -- what goes where
+
+| | `process_registry.yaml` | `batch_registry.yaml` |
+| --- | --- | --- |
+| Owns | model invocation layer: step order, `prompt`, `model`, `fallback`, capability passthrough | batch-run mechanics only: `batch_id`, `process`/`step` reference, `environment`, `poll_interval_seconds`, `poll_timeout_seconds` |
+| Model/prompt info | yes -- the only place it lives | no -- always resolved via the `process`/`step` it points at |
+
+A batch entry never duplicates model config -- `execute_batch()` always
+reads `prompt`/`model`/`fallback`/capabilities from the
+`process_registry.yaml` step the batch's `process` (+ optional `step`)
+reference resolves to.
+
 ## Tests
 
 ```bash
@@ -529,22 +541,31 @@ def _write_sample_usage(dest: Path) -> None:
         '''"""
 sample_usage.py
 
-Sample class wrapping the library entry point exactly as shown in
-SETUP.md step 11 ("Using the library entry point directly"). Needs a
-real credential (ANTHROPIC_API_KEY env var or an ambient `claude login`
-OAuth session) to actually call a model. Run: python examples/sample_usage.py
+Two worked examples of the library entry point, as shown in SETUP.md
+step 11 ("Using the library entry point directly"). Needs a real
+credential (ANTHROPIC_API_KEY env var or an ambient `claude login` OAuth
+session) to actually call a model. Run: python examples/sample_usage.py
 
 Logging is on by default -- execute() logs every turn via
 orchestration_accelerator's logging wrapper, configured from this
 project's own logger_config.json. No setup needed; trace lines land
 under ./logs/trace.log.
+
+Example 1 (static input) -- TicketClassifier wraps the ticketClassification
+process, whose classify.yaml prompt has no {{key}} placeholders, so
+`input` is just a plain string.
+
+Example 2 (dynamic / templated input) -- TicketTriager wraps the
+templatingDemo process's `triage` step, whose ticket_triage.yaml prompt
+has {{key}} placeholders. `input` here must be a dict covering every
+placeholder -- PromptManager.render() fills them in at call time.
 """
 
 from project_accelerator import execute
 
 
 class TicketClassifier:
-    """Thin wrapper around execute() for the ticketClassification process."""
+    """Thin wrapper around execute() for the ticketClassification process (static input)."""
 
     def __init__(self, environment: str = "local", backend: str = "agent_sdk") -> None:
         self.environment = environment
@@ -560,10 +581,44 @@ class TicketClassifier:
         })
 
 
+class TicketTriager:
+    """Thin wrapper around execute() for templatingDemo's `triage` step (dynamic/templated input)."""
+
+    def __init__(self, environment: str = "local", backend: str = "agent_sdk") -> None:
+        self.environment = environment
+        self.backend = backend
+
+    def triage(self, ticket_id: str, customer_name: str, customer_tier: str, body: str) -> dict:
+        return execute({
+            "process": "templatingDemo",
+            "step": "triage",
+            "input": {
+                "ticket_id": ticket_id,
+                "customer_name": customer_name,
+                "customer_tier": customer_tier,
+                "body": body,
+            },
+            "environment": self.environment,
+            "backend": self.backend,
+        })
+
+
 def main() -> None:
+    print("--- Example 1: static input ---")
     classifier = TicketClassifier()
     result = classifier.classify("sample ticket text")
     print(result)
+
+    print("--- Example 2: dynamic / templated input ---")
+    triager = TicketTriager()
+    result = triager.triage(
+        ticket_id="T-1",
+        customer_name="Ada",
+        customer_tier="gold",
+        body="My invoice is wrong",
+    )
+    print(result)
+
     print("Trace logged to ./logs/trace.log (see logger_config.json).")
 
 

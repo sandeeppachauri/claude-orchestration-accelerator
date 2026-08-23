@@ -139,6 +139,22 @@ schema, and `examples/file_upload_example.py` /
 `examples/batch_processing_example.py` in any scaffolded project for
 runnable samples.
 
+### `process_registry.yaml` vs `batch_registry.yaml` -- what goes where
+
+The two files never overlap in what they configure:
+
+| | `process_registry.yaml` | `batch_registry.yaml` |
+| --- | --- | --- |
+| Owns | The **model invocation layer**: step order, `prompt`, `model`, `fallback` chain, and any capability passthrough key (`max_turns`, `thinking`, `temperature`, ...) | **Batch-run mechanics only**: `batch_id`, which `process`/`step` to run, `environment`, `poll_interval_seconds`, `poll_timeout_seconds` |
+| Model/prompt info | Yes -- the only place it lives | No -- always resolved by following `batch_registry.yaml`'s `process` (+ optional `step`) reference back into `process_registry.yaml` |
+| Used by | `execute()` (text path) and `execute_batch()` (batch path, indirectly) | `execute_batch()` only |
+
+So a batch entry never duplicates model config -- it just points at a
+`(process, step)` and `execute_batch()` reads that step's `prompt`/
+`model`/`fallback`/capabilities straight out of `process_registry.yaml`.
+See `.claude/rules/process-registry.md` and `.claude/rules/batch-registry.md`
+for the full field-by-field schema of each.
+
 ## Sub-projects
 
 - [`claude-orchestration-accelerator`](./README_package.md) (this repo

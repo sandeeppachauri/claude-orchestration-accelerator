@@ -11,11 +11,55 @@ This project runs on the `claude-project-accelerator` stack:
    and per-step `{prompt, model, fallback, ...capabilities}` config --
    see `.claude/rules/process-registry.md` for the schema and how extra
    keys (`max_turns`, `thinking`, `temperature`, ...) pass through to the
-   model call untouched.
-3. `prompts/*.yaml` holds the prompt templates the registry points at.
+   model call untouched. **This is the model invocation layer** -- every
+   detail of what runs (which prompt, which model, fallback order,
+   per-call capability flags) lives here and nowhere else.
+3. `prompts/*.yaml` holds the prompt templates the registry points at,
+   including `{{key}}` placeholders rendered from `execute()`'s `input`.
 4. Auth resolution (`claude-auth-accelerator`) and tracing
    (`ClaudeSDKLoggerAccelerator`) are wired in automatically -- nothing
    to configure to get logging or credential resolution working.
+5. `batch_registry.yaml` is the batch-run counterpart -- it carries
+   **only** batch-run mechanics (`batch_id`, which `process`/`step` to
+   run, `environment`, poll timing). It has no model/prompt/fallback
+   fields of its own; `execute_batch()` always looks those up from the
+   `process_registry.yaml` step the batch entry points at. See
+   `.claude/rules/batch-registry.md` for the schema.
+
+## Request flow (text path)
+
+```mermaid
+flowchart LR
+    A[payload] --> B["execute(payload)"]
+    B --> C["resolve_environment()"]
+    C --> D["process_registry.yaml\n(process, step) lookup"]
+    D --> E["PromptManager\nrender prompt / fill {{key}}"]
+    E --> F["model-router\nexecute_with_fallback()"]
+    F --> G{backend}
+    G -->|agent_sdk| H[Claude Agent SDK call]
+    G -->|messages_api| I[Messages API call]
+    H --> J["validate output\n(prompt format contract)"]
+    I --> J
+    J --> K["logging\n(ClaudeSDKLoggerAccelerator)"]
+    K --> L[result]
+```
+
+## Batch flow
+
+```mermaid
+flowchart LR
+    A2[payload] --> B2["execute_batch(payload)"]
+    B2 --> C2["batch_registry.yaml\nbatch_id lookup"]
+    C2 --> D2["process_registry.yaml\n(process, step) --\nmodel / fallback / capabilities"]
+    D2 --> E2["Messages Batches API\nsubmit job"]
+    E2 --> F2["poll until ended\n(poll_interval/poll_timeout)"]
+    F2 --> G2["validate each result\n(prompt format contract)"]
+    G2 --> H2[per-item results]
+```
+
+`batch_registry.yaml` never carries model info itself -- step D2 always
+resolves back into `process_registry.yaml` for prompt/model/fallback/
+capabilities, same as the text path.
 
 See `HOWTO.md` for a file-by-file breakdown and `README.md` for the
 quick-start commands.
