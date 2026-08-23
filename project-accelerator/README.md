@@ -28,6 +28,24 @@ The payload's `"step"` field only narrows to one step -- it never
 reorders/subsets a process's `steps` list. `process_registry.yaml` is the
 only place step flow is controlled.
 
+## Environment configuration
+
+`"environment"` (payload -> `.env`'s `ENVIRONMENT` -> `"local"`) picks
+which credential `claude-auth-accelerator` resolves: `local`/`dev` allow
+the ambient `claude login` OAuth session (agent_sdk only); any other
+value (`staging`, `prod`, ...) requires a console `ANTHROPIC_API_KEY` set
+in that environment's own `.env`/secret store, and works with either
+backend.
+
+```python
+execute({"process": "ticketClassification", "input": "...",
+         "environment": "local", "backend": "agent_sdk"})     # OAuth session
+execute({"process": "ticketClassification", "input": "...",
+         "environment": "staging", "backend": "messages_api"})  # console key
+execute({"process": "ticketClassification", "input": "...",
+         "environment": "prod", "backend": "agent_sdk"})        # console key
+```
+
 ## CLI
 
 No local checkout required -- `cpa` and everything it scaffolds installs

@@ -1,0 +1,36 @@
+step: ticket_triage
+version: 1
+scope:
+  in_bounds:
+    - "Triage one ticket using the customer/ticket fields supplied at runtime"
+  out_of_bounds:
+    - "Do not invent fields not given in the ticket data"
+    - "Do not draft a customer-facing reply"
+
+format:
+  type: text
+  max_words: 120
+
+constraints:
+  - "Reference the actual ticket_id and customer_name given, never placeholders"
+  - "Keep the triage note under 120 words"
+
+# Example 2: multiple runtime placeholders ({{ }}) woven into an otherwise
+# static prompt. `input` for this step must be a dict with exactly these
+# 4 keys: ticket_id, customer_name, customer_tier, body. PromptManager
+# raises if any key is missing, or if an extra key is supplied that no
+# placeholder consumes.
+system_prompt: |
+  You are a support triage assistant. Every ticket you see belongs to a
+  {{customer_tier}}-tier customer -- weigh urgency accordingly.
+
+user_prompt: |
+  Ticket ID: {{ticket_id}}
+  Customer: {{customer_name}}
+  Tier: {{customer_tier}}
+
+  Ticket body:
+  {{body}}
+
+  Write a short triage note: likely category, urgency, and one
+  recommended next action.

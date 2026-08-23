@@ -90,6 +90,23 @@ def get_process(
     }
 
 
+def get_process_by_id(
+    process_id: str, path: Path | str = DEFAULT_REGISTRY_PATH
+) -> tuple[str, dict[str, Any]]:
+    """Reverse lookup: batch_registry.yaml references a process's `id`
+    field, not its top-level key name, so batch job resolution needs to
+    go id -> (process_name, block). Returns (process_name, block) for the
+    first process whose `id` matches."""
+    registry = load_registry(path)
+    for process_name, block in registry.items():
+        if isinstance(block, dict) and block.get("id") == process_id:
+            return process_name, block
+    raise ProcessNotFoundError(
+        f"No process with id '{process_id}' defined in {path}. Known ids: "
+        f"{sorted(b.get('id') for b in registry.values() if isinstance(b, dict))}"
+    )
+
+
 def get_default_step_config(environment: str | None = None) -> dict[str, Any]:
     """The built-in default configuration fallback (plan 4.1): one model
     from DEFAULT_MODEL in .env (or 'claude-sonnet-5' if unset), one

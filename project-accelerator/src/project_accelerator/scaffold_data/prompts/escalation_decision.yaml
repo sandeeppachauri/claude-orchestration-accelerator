@@ -1,0 +1,44 @@
+step: escalation_decision
+version: 1
+scope:
+  in_bounds:
+    - "Decide whether a ticket must escalate to a human, given full context"
+  out_of_bounds:
+    - "Do not resolve the ticket yourself"
+    - "Do not contact the customer"
+
+format:
+  type: json
+  schema:
+    escalate: "bool"
+    urgency: "enum[low, medium, high]"
+    reason: "string"
+
+constraints:
+  - "escalate must be true whenever urgency is high"
+  - "reason must cite the actual account_history and sla_minutes_remaining given"
+
+# Example 3 (complex): placeholders in BOTH system_prompt (persona changes
+# with customer_tier) and user_prompt (multi-field case dossier). Pair
+# this prompt file's step, in process_registry.yaml, with a full spread
+# of capability-passthrough keys (max_turns/permission_mode/thinking for
+# agent_sdk, or temperature/top_p/max_tokens for messages_api) -- see
+# `escalation_decision` in process_registry.yaml for the canonical
+# capability-key reference.
+system_prompt: |
+  You are a senior escalation reviewer for {{customer_tier}}-tier accounts.
+  {{customer_tier}} accounts on a paid plan get the benefit of the doubt on
+  ambiguous urgency; free-tier accounts do not.
+
+user_prompt: |
+  Case dossier
+  ------------
+  Ticket ID:            {{ticket_id}}
+  Customer:             {{customer_name}} ({{customer_tier}})
+  Account history:      {{account_history}}
+  SLA minutes remaining: {{sla_minutes_remaining}}
+  Ticket body:          {{body}}
+
+  Decide: escalate (true/false), urgency (low/medium/high), and a one
+  sentence reason grounded in the account history and SLA figures above.
+  Respond as JSON: {"escalate": ..., "urgency": ..., "reason": ...}

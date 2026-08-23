@@ -62,6 +62,7 @@ def _copy_reference_skeleton(dest: Path) -> None:
 def _copy_sample_config(dest: Path) -> None:
     data_dir = _scaffold_data_dir()
     shutil.copy2(data_dir / "process_registry.yaml", dest / "process_registry.yaml")
+    shutil.copy2(data_dir / "batch_registry.yaml", dest / "batch_registry.yaml")
     prompts_dest = dest / "prompts"
     prompts_dest.mkdir(exist_ok=True)
     for prompt_file in (data_dir / "prompts").glob("*.yaml"):
@@ -69,7 +70,15 @@ def _copy_sample_config(dest: Path) -> None:
 
 
 def _write_env_file(dest: Path) -> None:
-    (dest / ".env").write_text("ENVIRONMENT=local\nDEFAULT_MODEL=claude-sonnet-5\n")
+    (dest / ".env").write_text(
+        "# ENVIRONMENT gates which auth_accelerator provider resolves:\n"
+        "#   local / dev  -> ambient `claude login` OAuth session, agent_sdk only\n"
+        "#   anything else (staging, prod, ...) -> requires ANTHROPIC_API_KEY below,\n"
+        "#                                          works with either backend\n"
+        "ENVIRONMENT=local\n"
+        "# ANTHROPIC_API_KEY=sk-ant-api...   # required once ENVIRONMENT != local/dev\n"
+        "DEFAULT_MODEL=claude-sonnet-5\n"
+    )
 
 
 def _write_logger_config(dest: Path) -> None:
@@ -93,15 +102,21 @@ Scaffolded by `cpa new --project-name {project_name}` from
 - `pipeline/run_pipeline.py` -- sample script driving `execute()`.
 - `examples/sample_usage.py` -- sample `TicketClassifier` class wrapping
   `execute()` the way SETUP.md step 11 shows it used directly.
+- `batch_registry.yaml` -- maps a `batch_id` to a `process_registry.yaml`
+  process for batch jobs (see "File upload and batch processing" below).
+- `examples/file_upload_example.py` / `examples/batch_processing_example.py`
+  -- sample classes for `upload_file()` and `execute_batch()`.
 - `.env` -- `ENVIRONMENT` (default environment) and `DEFAULT_MODEL`
   (fallback model when a `(process, step)` isn't in the registry).
 - `logger_config.json` -- default logging wrapper config.
 - `tests/test_sample_pipeline.py` -- smoke test for the sample process.
 
-Two sample processes ship out of the box: `ticketClassification`
-(`classify` -> `extract` -> `respond`) and `onboarding` (`welcome` ->
-`verify` -> `finalize`). Edit `process_registry.yaml` and `prompts/*.yaml`
-to add your own, or remove the samples once you've replaced them.
+Three sample processes ship out of the box: `ticketClassification`
+(`classify` -> `extract` -> `respond`), `onboarding` (`welcome` ->
+`verify` -> `finalize`), and `templatingDemo` (`triage` -> `escalate`,
+demonstrating runtime `{{key}}` placeholders -- see "Runtime input" below).
+Edit `process_registry.yaml` and `prompts/*.yaml` to add your own, or
+remove the samples once you've replaced them.
 
 ## Run
 
@@ -118,6 +133,30 @@ result = execute({{
 The payload's `"process"` (and optional `"step"`) select what to run;
 `process_registry.yaml` alone controls step order and per-step config --
 the payload can never reorder, skip, or subset a process's `steps` list.
+
+## Environment configuration
+
+`"environment"` (payload -> `.env`'s `ENVIRONMENT` -> `"local"`) picks
+which credential provider `claude-auth-accelerator` resolves:
+
+| `environment` | Credential | Backend |
+| --- | --- | --- |
+| `local` / `dev` | ambient `claude login` OAuth session | `agent_sdk` only |
+| anything else (`staging`, `prod`, ...) | `ANTHROPIC_API_KEY` (console key) | `agent_sdk` or `messages_api` |
+
+```python
+execute({{"process": "ticketClassification", "input": "...",
+         "environment": "local", "backend": "agent_sdk"}})      # OAuth session
+execute({{"process": "ticketClassification", "input": "...",
+         "environment": "staging", "backend": "messages_api"}})  # console key
+execute({{"process": "ticketClassification", "input": "...",
+         "environment": "prod", "backend": "agent_sdk"}})        # console key
+```
+
+Set `ANTHROPIC_API_KEY` in each environment's own `.env`/secret store --
+never share a prod key into a local `.env`. Omitting `"environment"`
+falls back to this project's `.env`, so a deployed service typically sets
+`ENVIRONMENT` once there and never passes `"environment"` per call.
 
 ## Capabilities (per-step model config)
 
@@ -142,6 +181,54 @@ classify:
 ```
 
 See `.claude/rules/process-registry.md` for the full schema.
+
+## Runtime input (`{{key}}` placeholders)
+
+`prompts/*.yaml`'s `system_prompt` and optional `user_prompt` fields may
+contain `{{key}}` placeholders, filled at call time from `execute()`'s
+payload `"input"`:
+
+| Prompt has placeholders? | `input` must be | Example |
+| --- | --- | --- |
+| No | a plain string | `"input": "some ticket text"` |
+| Yes | a dict covering every `{{key}}`, no extras | `"input": {{"ticket_id": "T-1", "body": "..."}}` |
+
+Every placeholder needs a matching dict key and every dict key needs a
+matching placeholder -- either mismatch raises immediately (fail fast,
+never a silently blank or ignored value). Three worked examples ship in
+`prompts/`:
+
+1. `classify.yaml` -- static only, no placeholders (plain string input).
+2. `ticket_triage.yaml` -- 4 placeholders in a static `user_prompt`
+   (`templatingDemo.triage`).
+3. `escalation_decision.yaml` -- placeholders in *both* `system_prompt`
+   and `user_prompt`, paired with a full capability-key spread in
+   `process_registry.yaml`'s `templatingDemo.escalate` step.
+
+See `HOWTO.md` for a full walkthrough and runnable snippets.
+
+## File upload and batch processing
+
+```python
+from project_accelerator import upload_file, execute_batch
+
+file_id = upload_file("invoice.pdf", backend="messages_api")
+
+result = execute_batch({{
+    "batch_id": "ticketClassificationBatch_01",  # see batch_registry.yaml
+    "inputs": ["ticket text 1", "ticket text 2"],
+}})
+```
+
+`upload_file()` uploads via Anthropic's Files API (`messages_api`) or
+returns a local path reference (`agent_sdk`). `execute_batch()` submits
+every item in `"inputs"` as one real Anthropic Message Batches API job
+(not a loop over `execute()`), polls until done, then validates each
+result the same way `execute()` does. `batch_registry.yaml` maps a
+`batch_id` to a `process_registry.yaml` process `id` (+ optional `step`)
+-- see `.claude/rules/batch-registry.md` for the schema. Runnable
+examples: `examples/file_upload_example.py`,
+`examples/batch_processing_example.py`.
 
 ## Tests
 
@@ -194,11 +281,123 @@ a running pipeline.
   at by name. They're separate files (not inline in the registry) so
   prompt text can be reviewed/edited independently of step wiring.
 
+## Runtime input: `{{key}}` placeholders end to end
+
+A prompt's `system_prompt` and optional `user_prompt` fields can embed
+`{{key}}` placeholders that get filled from `execute()`'s payload
+`"input"` at call time -- static prose and dynamic values mixed freely in
+the same string. This is enforced by `PromptManager.render()`, and the
+match is mandatory in both directions:
+
+- If the prompt has **no placeholders**, `input` must be a plain string.
+  It's sent verbatim as the user turn; `system_prompt` is used as-is.
+- If the prompt **has** `{{key}}` placeholders, `input` must be a dict.
+  `user_prompt` becomes required (it's what the placeholders render
+  into as the user turn). Every placeholder must have a matching dict
+  key, and every dict key must be used by some placeholder -- either
+  direction mismatching raises `PromptValidationError` immediately, so a
+  config/call-site drift is caught at the call, not discovered later as
+  a `{{literal_placeholder}}` leaking into a model call.
+
+Three shipped examples, simplest to most complex:
+
+1. **Static only -- `prompts/classify.yaml`** (`ticketClassification.classify`).
+   No placeholders anywhere.
+   ```python
+   execute({{
+       "process": "ticketClassification", "step": "classify",
+       "input": "I was double charged", "backend": "agent_sdk",
+   }})
+   ```
+
+2. **Multiple placeholders, static prompt around them -- `prompts/ticket_triage.yaml`**
+   (`templatingDemo.triage`). `system_prompt` has one placeholder
+   (`{{customer_tier}}`); `user_prompt` has all four.
+   ```python
+   execute({{
+       "process": "templatingDemo", "step": "triage",
+       "input": {{
+           "ticket_id": "T-1",
+           "customer_name": "Ada",
+           "customer_tier": "gold",
+           "body": "My invoice is wrong",
+       }},
+       "backend": "agent_sdk",
+   }})
+   ```
+
+3. **Complex -- `prompts/escalation_decision.yaml`** (`templatingDemo.escalate`).
+   Placeholders in *both* `system_prompt` (changes persona per
+   `{{customer_tier}}`) and `user_prompt` (a 6-field case dossier), paired
+   with a full capability-key spread on the step in `process_registry.yaml`:
+   `max_turns`, `permission_mode`, `thinking` (agent_sdk) and
+   `temperature`, `top_p`, `max_tokens` (messages_api) all set at once --
+   each backend consumes only the keys it understands.
+   ```python
+   execute({{
+       "process": "templatingDemo", "step": "escalate",
+       "input": {{
+           "ticket_id": "T-9",
+           "customer_name": "Grace",
+           "customer_tier": "free",
+           "account_history": "2 prior tickets",
+           "sla_minutes_remaining": "15",
+           "body": "Site is down",
+       }},
+       "backend": "agent_sdk",
+   }})
+   ```
+
+Full capability-passthrough key reference (any step key besides
+`prompt`/`model`/`fallback`/`system_prompt` flows straight through to the
+model call -- see `.claude/rules/process-registry.md`):
+
+| Key | Backend | Meaning |
+| --- | --- | --- |
+| `max_turns` | `agent_sdk` | cap on agentic turns for the step |
+| `permission_mode` | `agent_sdk` | e.g. `acceptEdits`, `bypassPermissions`, `default`, `plan` |
+| `thinking` | `agent_sdk` | extended thinking, `{{type: enabled, budget_tokens: N}}` |
+| `temperature` | `messages_api` | sampling temperature |
+| `top_p` | `messages_api` | nucleus sampling cutoff |
+| `max_tokens` | `messages_api` | response token cap |
+
 - **`.env`** -- `ENVIRONMENT` (the default environment `execute()` resolves
   auth for when a payload doesn't specify one) and `DEFAULT_MODEL` (the
   model used for any `(process, step)` not explicitly listed in
   `process_registry.yaml`). Exists so environment/default-model changes
   don't require touching code.
+
+### Environment configuration across `local` / `staging` / `prod`
+
+`"environment"` (payload -> `.env`'s `ENVIRONMENT` -> `"local"`) decides
+which `claude-auth-accelerator` credential provider resolves -- it's not
+just a label:
+
+| `environment` | Credential | Backend |
+| --- | --- | --- |
+| `local` / `dev` | ambient `claude login` OAuth session | `agent_sdk` only |
+| `staging`, `prod`, or any other value | `ANTHROPIC_API_KEY` (console key) | `agent_sdk` or `messages_api` |
+
+```python
+# local -- no ANTHROPIC_API_KEY needed as long as `claude login` has run
+execute({{"process": "ticketClassification", "input": "...",
+         "environment": "local", "backend": "agent_sdk"}})
+
+# staging -- ANTHROPIC_API_KEY set in staging's own .env/secret store
+execute({{"process": "ticketClassification", "input": "...",
+         "environment": "staging", "backend": "agent_sdk"}})
+execute({{"process": "ticketClassification", "input": "...",
+         "environment": "staging", "backend": "messages_api"}})
+
+# prod -- ANTHROPIC_API_KEY set in prod's own .env/secret store
+execute({{"process": "ticketClassification", "input": "...",
+         "environment": "prod", "backend": "messages_api"}})
+```
+
+Each environment keeps its own `.env`/secret store -- never copy a prod
+key into a local `.env`. A deployed service typically sets `ENVIRONMENT`
+once via that environment's `.env` and omits `"environment"` from every
+call, relying on the payload -> `.env` -> `"local"` fallback.
 
 - **`logger_config.json`** -- turns the default JSON-line tracing wrapper's
   8 logging scopes on/off. Logging is on by default -- `execute()` loads
@@ -217,6 +416,22 @@ a running pipeline.
   `run_pipeline.py`), including the optional `"step"` and `"environment"`
   keys. Copy this pattern when you need to call a process from your own
   application code.
+
+- **`batch_registry.yaml`** -- maps a `batch_id` to a
+  `process_registry.yaml` process `id` (+ optional `step`), plus
+  batch-specific `poll_interval_seconds`/`poll_timeout_seconds`. See
+  `.claude/rules/batch-registry.md` for the full schema. `execute_batch()`
+  reads this to know which process/step/model runs across every item in
+  a batch job.
+
+- **`examples/file_upload_example.py`** -- a `DocumentUploader` class
+  showing `project_accelerator.upload_file()` used directly, then
+  running the uploaded file's reference through `execute()`.
+
+- **`examples/batch_processing_example.py`** -- a `BatchTicketClassifier`
+  class showing `project_accelerator.execute_batch()` used directly,
+  wired to the `ticketClassificationBatch_01` entry in
+  `batch_registry.yaml`.
 
 - **`tests/test_sample_pipeline.py`** -- a smoke test for the sample
   process that mocks the model call, so it runs without any credential.
@@ -350,6 +565,104 @@ def main() -> None:
     result = classifier.classify("sample ticket text")
     print(result)
     print("Trace logged to ./logs/trace.log (see logger_config.json).")
+
+
+if __name__ == "__main__":
+    main()
+'''
+    )
+
+
+def _write_file_upload_example(dest: Path) -> None:
+    examples_dir = dest / "examples"
+    examples_dir.mkdir(exist_ok=True)
+    (examples_dir / "file_upload_example.py").write_text(
+        '''"""
+file_upload_example.py
+
+Sample class wrapping project_accelerator.upload_file() alongside
+execute(). Needs a real credential to actually call a model or upload a
+file. Run: python examples/file_upload_example.py <path-to-file>
+"""
+
+import sys
+
+from project_accelerator import execute, upload_file
+
+
+class DocumentUploader:
+    """Uploads a document, then runs it through the ticketClassification
+    process's classify step."""
+
+    def __init__(self, environment: str = "local", backend: str = "messages_api") -> None:
+        self.environment = environment
+        self.backend = backend
+
+    def upload(self, path: str) -> str:
+        return upload_file(path, environment=self.environment, backend=self.backend)
+
+    def classify_document(self, path: str) -> dict:
+        file_id = self.upload(path)
+        return execute({
+            "process": "ticketClassification",
+            "step": "classify",
+            "input": f"Uploaded file reference: {file_id}",
+            "environment": self.environment,
+            "backend": self.backend,
+        })
+
+
+def main() -> None:
+    path = sys.argv[1] if len(sys.argv) > 1 else "README.md"
+    uploader = DocumentUploader()
+    result = uploader.classify_document(path)
+    print(result)
+
+
+if __name__ == "__main__":
+    main()
+'''
+    )
+
+
+def _write_batch_processing_example(dest: Path) -> None:
+    examples_dir = dest / "examples"
+    examples_dir.mkdir(exist_ok=True)
+    (examples_dir / "batch_processing_example.py").write_text(
+        '''"""
+batch_processing_example.py
+
+Sample class wrapping project_accelerator.execute_batch() -- submits a
+list of inputs as a single Anthropic Message Batches API job (see
+batch_registry.yaml and .claude/rules/batch-registry.md), not a loop
+over execute(). Needs a real credential to actually submit a batch.
+Run: python examples/batch_processing_example.py
+"""
+
+from project_accelerator import execute_batch
+
+
+class BatchTicketClassifier:
+    """Classifies many tickets in one batch job, wired to the
+    ticketClassificationBatch entry in batch_registry.yaml."""
+
+    def __init__(self, batch_id: str = "ticketClassificationBatch_01") -> None:
+        self.batch_id = batch_id
+
+    def classify_many(self, tickets: list[str]) -> dict:
+        return execute_batch({
+            "batch_id": self.batch_id,
+            "inputs": tickets,
+        })
+
+
+def main() -> None:
+    classifier = BatchTicketClassifier()
+    result = classifier.classify_many([
+        "I was double charged for my subscription.",
+        "How do I reset my password?",
+    ])
+    print(result)
 
 
 if __name__ == "__main__":
@@ -520,6 +833,8 @@ def cmd_new(args: argparse.Namespace) -> None:
     _write_howto(dest, args.project_name)
     _write_pipeline_runner(dest)
     _write_sample_usage(dest)
+    _write_file_upload_example(dest)
+    _write_batch_processing_example(dest)
     _write_sample_test(dest)
 
     if args.python:
@@ -567,8 +882,9 @@ def cmd_new(args: argparse.Namespace) -> None:
 
     print(f"\nScaffolded project '{args.project_name}' at {dest}")
     print("Created:")
-    print("  prompts/*.yaml, process_registry.yaml, .env, logger_config.json")
+    print("  prompts/*.yaml, process_registry.yaml, batch_registry.yaml, .env, logger_config.json")
     print("  pipeline/run_pipeline.py, examples/sample_usage.py, tests/test_sample_pipeline.py")
+    print("  examples/file_upload_example.py, examples/batch_processing_example.py")
     print("  README.md, HOWTO.md")
     print("  CLAUDE.md, CLAUDE.local.md, .claude/ (reference skeleton)")
     print("  .mcp.json, docs/architecture.md, scripts/smoke_test.sh")

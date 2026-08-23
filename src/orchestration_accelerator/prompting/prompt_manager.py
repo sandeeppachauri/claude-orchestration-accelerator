@@ -28,11 +28,14 @@ project's own prompts/ directory when constructed with an explicit path).
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+_PLACEHOLDER_RE = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
 # Default: <repo-or-package-root>/prompts -- i.e. three levels up from this
 # file (src/orchestration_accelerator/prompting/prompt_manager.py -> src/orchestration_accelerator/prompting
@@ -58,6 +61,7 @@ class PromptConfig:
     format: dict[str, Any]
     constraints: list[str]
     system_prompt: str
+    user_prompt: str | None = None
 
     def describe(self) -> str:
         """Human-readable summary -- useful for logging which contract was
@@ -113,7 +117,78 @@ class PromptManager:
             format=raw["format"],
             constraints=raw["constraints"],
             system_prompt=raw["system_prompt"],
+            user_prompt=raw.get("user_prompt"),
         )
+
+    def render(
+        self, step: str, values: dict[str, Any] | str, filename: str | None = None
+    ) -> tuple[PromptConfig, str, str]:
+        """Load a step's prompt config and resolve `{{key}}` placeholders
+        in `system_prompt`/`user_prompt` against `values`.
+
+        `values` is either:
+          - a plain string: legacy path. The prompt must contain NO
+            placeholders (any `{{key}}` present is a config/call-site
+            mismatch, raised immediately). Returned user content is
+            `values` verbatim; `system_prompt` is used as-is.
+          - a dict of `{key: value}`: template path. The step's
+            `user_prompt` field is then REQUIRED (there is nothing else
+            to send as the user turn). Every `{{key}}` in `system_prompt`
+            and `user_prompt` must have a matching dict key, and every
+            dict key must be consumed by at least one placeholder --
+            either direction mismatching raises `PromptValidationError`
+            so config and call site can never silently drift apart.
+
+        Returns (cfg, rendered_system_prompt, rendered_user_content).
+        """
+        cfg = self.get(step, filename=filename)
+
+        placeholders = set(_PLACEHOLDER_RE.findall(cfg.system_prompt))
+        if cfg.user_prompt is not None:
+            placeholders |= set(_PLACEHOLDER_RE.findall(cfg.user_prompt))
+
+        if isinstance(values, str):
+            if placeholders:
+                raise PromptValidationError(
+                    f"Step '{step}' prompt declares placeholder(s) {sorted(placeholders)} "
+                    f"but was called with a plain string input. Pass a dict of "
+                    f"{{key: value}} covering every placeholder instead."
+                )
+            return cfg, cfg.system_prompt, values
+
+        # values is a dict from here on.
+        if not placeholders:
+            raise PromptValidationError(
+                f"Step '{step}' prompt has no {{{{key}}}} placeholders but was "
+                f"called with a dict input {sorted(values.keys())}. Pass a plain "
+                f"string, or add placeholders to the prompt YAML."
+            )
+
+        if cfg.user_prompt is None:
+            raise PromptValidationError(
+                f"Step '{step}' input is a dict but the prompt YAML has no "
+                f"'user_prompt' field -- a templated step must define "
+                f"'user_prompt' as the user turn."
+            )
+
+        missing = placeholders - values.keys()
+        if missing:
+            raise PromptValidationError(
+                f"Step '{step}' prompt requires placeholder(s) {sorted(missing)} "
+                f"not present in the supplied input {sorted(values.keys())}."
+            )
+
+        unused = values.keys() - placeholders
+        if unused:
+            raise PromptValidationError(
+                f"Step '{step}' input supplies key(s) {sorted(unused)} that are "
+                f"not referenced by any {{{{key}}}} placeholder in the prompt."
+            )
+
+        def _sub(text: str) -> str:
+            return _PLACEHOLDER_RE.sub(lambda m: str(values[m.group(1)]), text)
+
+        return cfg, _sub(cfg.system_prompt), _sub(cfg.user_prompt)
 
     def validate_output(self, step: str, cfg: PromptConfig, output: str) -> Any:
         """

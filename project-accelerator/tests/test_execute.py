@@ -95,6 +95,52 @@ _RESPONSES_BY_MODEL = {
 }
 
 
+def test_execute_dict_input_renders_placeholders(monkeypatch):
+    _patch_logging(monkeypatch)
+
+    seen = {}
+
+    async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
+        seen["system_prompt"] = system_prompt
+        seen["user_content"] = user_content
+        return "ok"
+
+    monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
+
+    result = execute(
+        {
+            "process": "templatingDemo",
+            "step": "triage",
+            "input": {
+                "ticket_id": "T-1",
+                "customer_name": "Ada",
+                "customer_tier": "gold",
+                "body": "My invoice is wrong",
+            },
+            "backend": "agent_sdk",
+        }
+    )
+    assert result == {"triage": "ok"}
+    assert "gold-tier" in seen["system_prompt"]
+    assert "T-1" in seen["user_content"]
+    assert "Ada" in seen["user_content"]
+
+
+def test_execute_dict_input_missing_key_raises(monkeypatch):
+    _patch_logging(monkeypatch)
+    _patch_router(monkeypatch)
+
+    with pytest.raises(Exception):
+        execute(
+            {
+                "process": "templatingDemo",
+                "step": "triage",
+                "input": {"ticket_id": "T-1"},
+                "backend": "agent_sdk",
+            }
+        )
+
+
 def test_default_configuration_fallback_for_undefined_process(monkeypatch):
     _patch_router(monkeypatch, response="anything goes")
     _patch_logging(monkeypatch)

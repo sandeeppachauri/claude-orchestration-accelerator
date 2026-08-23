@@ -16,6 +16,42 @@ ticketClassification:
     model: claude-opus-4-8
     fallback: [claude-sonnet-5]
 
+templatingDemo:
+  id: templatingDemo_01
+  description: >
+    Demonstrates runtime placeholder ({{key}}) substitution in prompt
+    YAML. `classify` (see ticketClassification above) is the static-only
+    baseline -- no placeholders, `input` is a plain string. `triage`
+    below is example 2 (multiple placeholders, static prompt around
+    them). `escalate` is example 3 (complex: placeholders in both
+    system_prompt and user_prompt, plus every capability-passthrough key
+    in one place).
+  steps: [triage, escalate]
+  triage:
+    prompt: ticket_triage.yaml
+    model: claude-sonnet-5
+    fallback: [claude-haiku-4-5-20251001]
+    # input must be a dict: {ticket_id, customer_name, customer_tier, body}
+  escalate:
+    prompt: escalation_decision.yaml
+    model: claude-opus-4-8
+    fallback: [claude-sonnet-5]
+    # input must be a dict: {ticket_id, customer_name, customer_tier,
+    # account_history, sla_minutes_remaining, body}
+    #
+    # Capability passthrough reference -- every key below flows untouched
+    # into the model call. agent_sdk-only keys (max_turns, permission_mode,
+    # thinking) and messages_api-only keys (temperature, top_p, max_tokens)
+    # can coexist here; each backend only consumes the keys it understands
+    # and ignores the rest via **extra, so this single block documents both
+    # surfaces at once.
+    max_turns: 3                                   # agent_sdk
+    permission_mode: acceptEdits                    # agent_sdk
+    thinking: {type: enabled, budget_tokens: 4096}  # agent_sdk
+    temperature: 0.2                                # messages_api
+    top_p: 0.9                                      # messages_api
+    max_tokens: 800                                  # messages_api
+
 onboarding:
   id: onboarding_01
   description: onboarding description

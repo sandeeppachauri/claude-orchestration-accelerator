@@ -1,0 +1,26 @@
+ticketClassificationBatch:
+  batch_id: ticketClassificationBatch_01
+  process: ticketClassification_01  # fk -> process_registry.yaml <process>.id
+  step: classify                    # optional -- narrows to one step, same rule as execute() payload
+  environment: local                # optional, same resolution as execute() -- batches are messages_api
+  poll_interval_seconds: 5          # only, so "local"/"dev" here still needs ANTHROPIC_API_KEY set
+  poll_timeout_seconds: 3600        # (no OAuth-session path for the raw Messages API)
+
+# Same batch, pointed at staging/prod instead of local -- only `environment`
+# changes; `process`/`step` stay the same since batches always run against
+# messages_api regardless of environment.
+ticketClassificationBatchStaging:
+  batch_id: ticketClassificationBatchStaging_01
+  process: ticketClassification_01
+  step: classify
+  environment: staging              # ANTHROPIC_API_KEY resolved from staging's own .env/secret store
+  poll_interval_seconds: 5
+  poll_timeout_seconds: 3600
+
+ticketClassificationBatchProd:
+  batch_id: ticketClassificationBatchProd_01
+  process: ticketClassification_01
+  step: classify
+  environment: prod                 # ANTHROPIC_API_KEY resolved from prod's own .env/secret store
+  poll_interval_seconds: 5
+  poll_timeout_seconds: 3600

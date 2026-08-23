@@ -29,6 +29,35 @@ it. `claude_agent_sdk` and `anthropic` are imported lazily so importing
 this package never hard-requires either SDK unless that backend is
 actually used.
 
+## Capability passthrough (`**extra`) per backend
+
+Any keyword besides `model`/`fallback`/`system_prompt`/`user_content`/
+`backend`/`environment` is forwarded untouched (`process_registry.yaml`'s
+step keys land here) — the authoritative list of what each backend sets
+explicitly vs. passes through:
+
+- **`agent_sdk`** (`backends.py::call_agent_sdk`) — sets `environment`,
+  `model`, `max_turns` (default `1`), `system_prompt` explicitly; `**extra`
+  flows into `auth_accelerator.build_options(**extra)` → `ClaudeAgentOptions`
+  (e.g. `permission_mode`, `thinking`).
+- **`messages_api`** (`backends.py::call_messages_api`) — sets `model`,
+  `max_tokens` (default `1024`), `system`, `messages` explicitly; `**extra`
+  flows into `anthropic.messages.create(**extra)` (e.g. `temperature`,
+  `top_p`).
+
+An unsupported key for the chosen backend/SDK version raises a
+`TypeError` at call time, not silently.
+
+## Scope: text only
+
+`execute_with_fallback()` covers the single-turn text path only. File
+upload and batch processing (`orchestration_accelerator.file`/`.batch`)
+call `anthropic`/`auth_accelerator` directly instead of routing through
+this package — a batch job submits one Anthropic Batches API call for
+many inputs at once, which doesn't fit this module's one-model-per-call
+retry loop. See the root README's "File upload and batch processing"
+section.
+
 ## Tests
 
 ```bash

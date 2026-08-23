@@ -53,3 +53,29 @@ Rules:
 - If a `(process, step)` pair isn't defined at all, the accelerator falls
   back to a built-in default: one model (from `.env`'s `DEFAULT_MODEL`)
   and one generic system prompt, with no fallback chain.
+
+## Runtime input & `{{key}}` placeholders
+
+A prompt file under `prompts/` (see `.claude/rules/prompt-yaml.md` if
+present, or `prompt_manager.py`) has `system_prompt` and an optional
+`user_prompt` field. Both are plain strings and may contain `{{key}}`
+placeholders. `execute()`'s payload `input` then works one of two ways,
+enforced by `PromptManager.render()` (mandatory, not optional):
+
+- **No placeholders in the prompt** — `input` must be a plain string,
+  sent verbatim as the user turn. `system_prompt` is used as-is. This is
+  the legacy/simple path (e.g. `classify.yaml`).
+- **Prompt has `{{key}}` placeholders** — `input` must be a dict of
+  `{key: value}`. `user_prompt` becomes required in the prompt YAML (it
+  is the user turn once templating is in play). Every placeholder in
+  `system_prompt`/`user_prompt` must have a matching dict key, and every
+  dict key must be consumed by some placeholder — either direction
+  mismatching raises `PromptValidationError` immediately, so the config
+  and the call site can never silently drift apart.
+
+See `prompts/classify.yaml` (no placeholders), `prompts/ticket_triage.yaml`
+(multiple placeholders, static prompt around them), and
+`prompts/escalation_decision.yaml` (placeholders in both `system_prompt`
+and `user_prompt`, paired with `templatingDemo.escalate` below for a full
+capability-key reference) for worked examples, wired up under the
+`templatingDemo` process in this file.

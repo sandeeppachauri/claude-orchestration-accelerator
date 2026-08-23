@@ -130,7 +130,7 @@ def _resolve_step_configs(process_name: str, only_step: str | None) -> list[tupl
 async def _run_one_step(
     step_name: str,
     step_config: dict[str, Any],
-    input_text: str,
+    input_data: str | dict[str, Any],
     backend: str,
     environment: str,
     session_id: str,
@@ -152,17 +152,24 @@ async def _run_one_step(
 
     if prompt_file is not None:
         pm = PromptManager(prompts_dir=prompts_dir)
-        cfg = pm.get(step_name, filename=prompt_file)
-        system_prompt = cfg.system_prompt
+        cfg, system_prompt, user_content = pm.render(
+            step_name, input_data, filename=prompt_file
+        )
     else:
         cfg = None
         system_prompt = step_config.get("system_prompt", "You are a helpful assistant.")
+        if not isinstance(input_data, str):
+            raise TypeError(
+                f"Step '{step_name}' has no prompt file, so a dict input has "
+                f"nowhere to be rendered -- pass a plain string."
+            )
+        user_content = input_data
 
     raw_output = await execute_with_fallback(
         model=model,
         fallback=fallback,
         system_prompt=system_prompt,
-        user_content=input_text,
+        user_content=user_content,
         backend=backend,
         environment=environment,
         **capabilities,
@@ -177,7 +184,7 @@ async def _run_one_step(
             session_id,
             turn_index,
             model=model,
-            payload={"step": step_name, "input": input_text},
+            payload={"step": step_name, "input": input_data},
         )
     except Exception:
         # Logging is best-effort -- a tracing failure must never take down
@@ -195,7 +202,7 @@ async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
 
     process_name = payload["process"]
     only_step = payload.get("step")
-    input_text = payload["input"]
+    input_data = payload["input"]
     backend = payload["backend"]
     environment = resolve_environment(payload.get("environment"))
 
@@ -208,7 +215,7 @@ async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
         results[step_name] = await _run_one_step(
             step_name,
             step_config,
-            input_text,
+            input_data,
             backend,
             environment,
             session_id,

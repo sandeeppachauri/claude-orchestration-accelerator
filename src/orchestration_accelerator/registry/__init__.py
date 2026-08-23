@@ -6,6 +6,7 @@ from .registry import (
     StepNotFoundError,
     get_default_step_config,
     get_process,
+    get_process_by_id,
     load_registry,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "StepNotFoundError",
     "get_default_step_config",
     "get_process",
+    "get_process_by_id",
     "load_registry",
 ]
