@@ -1,6 +1,7 @@
 import pytest
 
 import project_accelerator.core as core_module
+from orchestration_accelerator.registry import UnsupportedCapabilityError
 from project_accelerator import PayloadValidationError, execute
 
 
@@ -139,6 +140,71 @@ def test_execute_dict_input_missing_key_raises(monkeypatch):
                 "backend": "agent_sdk",
             }
         )
+
+
+def test_escalate_step_capabilities_are_agent_sdk_whitelisted(monkeypatch):
+    """templatingDemo.escalate's live capability keys (max_turns,
+    permission_mode, thinking) must all be agent_sdk-whitelisted, since
+    sample_usage.py's TicketEscalator calls it with backend="agent_sdk"."""
+    _patch_logging(monkeypatch)
+    _patch_router(
+        monkeypatch,
+        response='{"escalate": true, "urgency": "high", "reason": "SLA breach imminent"}',
+    )
+
+    result = execute(
+        {
+            "process": "templatingDemo",
+            "step": "escalate",
+            "input": {
+                "ticket_id": "T-9",
+                "customer_name": "Grace",
+                "customer_tier": "free",
+                "account_history": "2 prior tickets",
+                "sla_minutes_remaining": "15",
+                "body": "Site is down",
+            },
+            "backend": "agent_sdk",
+        }
+    )
+    assert result == {
+        "escalate": {"escalate": True, "urgency": "high", "reason": "SLA breach imminent"}
+    }
+
+
+def test_unwhitelisted_capability_key_raises_before_model_call(monkeypatch):
+    """A capability key not in capability_registry.yaml's allowed set for
+    the chosen backend must fail fast, before execute_with_fallback is
+    ever called -- not surface as a TypeError deep inside the SDK."""
+    called = False
+
+    async def _fake_execute_with_fallback(**kwargs):
+        nonlocal called
+        called = True
+        return "should not run"
+
+    monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
+    _patch_logging(monkeypatch)
+
+    with pytest.raises(UnsupportedCapabilityError):
+        execute(
+            {
+                "process": "templatingDemo",
+                "step": "escalate",
+                "input": {
+                    "ticket_id": "T-9",
+                    "customer_name": "Grace",
+                    "customer_tier": "free",
+                    "account_history": "2 prior tickets",
+                    "sla_minutes_remaining": "15",
+                    "body": "Site is down",
+                },
+                # escalate's live keys (max_turns, permission_mode) are
+                # agent_sdk-only -- running it as messages_api must fail.
+                "backend": "messages_api",
+            }
+        )
+    assert called is False
 
 
 def test_default_configuration_fallback_for_undefined_process(monkeypatch):

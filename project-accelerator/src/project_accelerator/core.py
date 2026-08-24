@@ -32,6 +32,7 @@ from orchestration_accelerator.registry import (
     StepNotFoundError,
     get_default_step_config,
     get_process,
+    validate_capabilities,
 )
 from model_router_accelerator import execute_with_fallback
 
@@ -102,6 +103,18 @@ def _resolve_registry_and_prompts_dir() -> tuple[Path, Path]:
     return DEFAULT_REGISTRY_PATH, PROMPTS_DIR
 
 
+def _resolve_capability_registry_path() -> Path:
+    """Same cwd-first-else-shipped-default resolution as
+    _resolve_registry_and_prompts_dir(), for capability_registry.yaml."""
+    cwd_capabilities = Path.cwd() / "capability_registry.yaml"
+    if cwd_capabilities.exists():
+        return cwd_capabilities
+
+    from orchestration_accelerator.registry import DEFAULT_CAPABILITY_REGISTRY_PATH
+
+    return DEFAULT_CAPABILITY_REGISTRY_PATH
+
+
 def _resolve_step_configs(process_name: str, only_step: str | None) -> list[tuple[str, dict]]:
     """Returns an ordered list of (step_name, step_config) to run, honoring
     process_registry.yaml's step order. `only_step` narrows to a single
@@ -149,6 +162,10 @@ async def _run_one_step(
         for k, v in step_config.items()
         if k not in ("prompt", "model", "fallback", "system_prompt")
     }
+    if capabilities:
+        validate_capabilities(
+            capabilities, backend, path=_resolve_capability_registry_path()
+        )
 
     if prompt_file is not None:
         pm = PromptManager(prompts_dir=prompts_dir)

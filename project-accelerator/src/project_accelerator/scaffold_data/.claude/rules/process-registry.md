@@ -44,8 +44,12 @@ Rules:
   `messages.create(**extra)` for `messages_api`). This is how you set
   `max_turns`, `thinking`/extended-thinking, `temperature`, `top_p`,
   `permission_mode`, etc. per step, entirely from this file — no
-  accelerator code change needed. An unsupported key for the chosen
-  backend/SDK version raises a `TypeError` at call time, not silently.
+  accelerator code change needed. Every capability key is checked
+  against `capability_registry.yaml`'s per-backend whitelist before the
+  model call — a key not whitelisted for the step's backend raises
+  `UnsupportedCapabilityError` immediately, not a `TypeError` several
+  layers deep inside the SDK/API client. See
+  `.claude/rules/capability-registry.md`.
 - A caller's execution payload can select a process and, optionally, a
   single step to narrow to — it can never reorder, skip, or subset a
   process's `steps` list. If you want different step behavior, edit

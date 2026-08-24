@@ -45,8 +45,11 @@ explicitly vs. passes through:
   flows into `anthropic.messages.create(**extra)` (e.g. `temperature`,
   `top_p`).
 
-An unsupported key for the chosen backend/SDK version raises a
-`TypeError` at call time, not silently.
+Every capability key is checked against `capability_registry.yaml`'s
+per-backend whitelist (see `claude-orchestration-accelerator`'s
+`.claude/rules/capability-registry.md`) before reaching either backend
+-- an unlisted key raises `UnsupportedCapabilityError` immediately,
+instead of a `TypeError` at call time deep inside the SDK/API client.
 
 ## Scope: text only
 

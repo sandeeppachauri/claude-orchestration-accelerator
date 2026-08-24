@@ -29,6 +29,13 @@ import yaml
 # scaffold command copies this same file).
 DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parents[3] / "process_registry.yaml"
 
+# Same tier/shipping story as DEFAULT_REGISTRY_PATH above -- see
+# capability_registry.yaml's own header comment for why this lives here
+# rather than in .env.
+DEFAULT_CAPABILITY_REGISTRY_PATH = (
+    Path(__file__).resolve().parents[3] / "capability_registry.yaml"
+)
+
 _RESERVED_KEYS = {"id", "description", "steps"}
 
 _GENERIC_DEFAULT_SYSTEM_PROMPT = (
@@ -48,6 +55,13 @@ class ProcessNotFoundError(Exception):
 
 class StepNotFoundError(Exception):
     """Raised when a requested step name isn't in a process's `steps` list."""
+
+
+class UnsupportedCapabilityError(Exception):
+    """Raised when a step's process_registry.yaml block passes a
+    capability key not whitelisted for the chosen backend in
+    capability_registry.yaml -- raised before the model call, instead of
+    a TypeError several layers deep inside the SDK/API client."""
 
 
 def load_registry(path: Path | str = DEFAULT_REGISTRY_PATH) -> dict[str, Any]:
@@ -105,6 +119,39 @@ def get_process_by_id(
         f"No process with id '{process_id}' defined in {path}. Known ids: "
         f"{sorted(b.get('id') for b in registry.values() if isinstance(b, dict))}"
     )
+
+
+def get_allowed_capabilities(
+    backend: str, path: Path | str = DEFAULT_CAPABILITY_REGISTRY_PATH
+) -> set[str]:
+    """Returns the set of capability keys whitelisted for `backend` in
+    capability_registry.yaml. An unlisted/missing backend section yields
+    an empty set (i.e. no capability passthrough allowed), not an error
+    -- a process_registry.yaml step that sets any capability key against
+    a backend absent from this file will always fail validation, making
+    the missing whitelist entry immediately visible rather than silently
+    permissive."""
+    registry = load_registry(path)
+    section = registry.get(backend) or {}
+    return set(section.get("allowed", []))
+
+
+def validate_capabilities(
+    capabilities: dict[str, Any],
+    backend: str,
+    path: Path | str = DEFAULT_CAPABILITY_REGISTRY_PATH,
+) -> None:
+    """Raises UnsupportedCapabilityError if `capabilities` contains any
+    key not whitelisted for `backend` in capability_registry.yaml."""
+    allowed = get_allowed_capabilities(backend, path=path)
+    unsupported = capabilities.keys() - allowed
+    if unsupported:
+        raise UnsupportedCapabilityError(
+            f"Capability key(s) {sorted(unsupported)} are not whitelisted "
+            f"for backend '{backend}' in {path}. Allowed for '{backend}': "
+            f"{sorted(allowed)}. Add the key to capability_registry.yaml's "
+            f"'{backend}' section once that backend actually supports it."
+        )
 
 
 def get_default_step_config(environment: str | None = None) -> dict[str, Any]:

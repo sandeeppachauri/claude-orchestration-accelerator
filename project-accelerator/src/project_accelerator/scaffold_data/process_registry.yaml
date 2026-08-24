@@ -39,18 +39,23 @@ templatingDemo:
     # input must be a dict: {ticket_id, customer_name, customer_tier,
     # account_history, sla_minutes_remaining, body}
     #
-    # Capability passthrough reference -- every key below flows untouched
-    # into the model call. agent_sdk-only keys (max_turns, permission_mode,
-    # thinking) and messages_api-only keys (temperature, top_p, max_tokens)
-    # can coexist here; each backend only consumes the keys it understands
-    # and ignores the rest via **extra, so this single block documents both
-    # surfaces at once.
+    # Capability passthrough -- every key below flows untouched into the
+    # model call, validated against capability_registry.yaml's per-backend
+    # whitelist before the call happens (an unlisted key raises
+    # UnsupportedCapabilityError immediately instead of a TypeError deep
+    # inside the SDK). This step is exercised with backend="agent_sdk" by
+    # sample_usage.py's TicketEscalator, so only agent_sdk-allowed keys are
+    # live here -- a messages_api-only key (temperature, top_p, max_tokens)
+    # would fail agent_sdk's whitelist, since the two backends' allowed
+    # sets are disjoint, not a shared superset.
     max_turns: 3                                   # agent_sdk
     permission_mode: acceptEdits                    # agent_sdk
     thinking: {type: enabled, budget_tokens: 4096}  # agent_sdk
-    temperature: 0.2                                # messages_api
-    top_p: 0.9                                      # messages_api
-    max_tokens: 800                                  # messages_api
+    # If this step instead ran with backend="messages_api", the live keys
+    # would be messages_api-only, e.g.:
+    #   temperature: 0.2
+    #   top_p: 0.9
+    #   max_tokens: 800
 
 onboarding:
   id: onboarding_01

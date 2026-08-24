@@ -263,9 +263,12 @@ classify:
 
 `agent_sdk` keys flow through `auth_accelerator.build_options(**extra)`
 into `ClaudeAgentOptions`; `messages_api` keys flow through directly to
-`anthropic.messages.create(**extra)`. An unsupported key for the chosen
-backend/SDK version raises a `TypeError` at call time. See
-`.claude/rules/process-registry.md` for the full schema.
+`anthropic.messages.create(**extra)`. Every capability key is checked
+against `capability_registry.yaml`'s per-backend whitelist first -- an
+unlisted key raises `UnsupportedCapabilityError` immediately, not a
+`TypeError` deep inside the SDK/API client. See
+`.claude/rules/process-registry.md` and
+`.claude/rules/capability-registry.md` for the full schema.
 
 ## 13. Deploying code changes
 

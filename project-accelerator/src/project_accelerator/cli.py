@@ -63,6 +63,7 @@ def _copy_sample_config(dest: Path) -> None:
     data_dir = _scaffold_data_dir()
     shutil.copy2(data_dir / "process_registry.yaml", dest / "process_registry.yaml")
     shutil.copy2(data_dir / "batch_registry.yaml", dest / "batch_registry.yaml")
+    shutil.copy2(data_dir / "capability_registry.yaml", dest / "capability_registry.yaml")
     prompts_dest = dest / "prompts"
     prompts_dest.mkdir(exist_ok=True)
     for prompt_file in (data_dir / "prompts").glob("*.yaml"):
@@ -98,6 +99,9 @@ Scaffolded by `cpa new --project-name {project_name}` from
 
 - `process_registry.yaml` -- single source of truth for each process's step
   order and per-step `{{prompt, model, fallback}}` configuration.
+- `capability_registry.yaml` -- whitelist of capability keys (e.g.
+  `max_turns`, `temperature`) allowed per backend; a step's capability
+  keys are checked against this before the model call.
 - `prompts/*.yaml` -- prompt templates referenced by the registry.
 - `pipeline/run_pipeline.py` -- sample script driving `execute()`.
 - `examples/sample_usage.py` -- sample `TicketClassifier` class wrapping
@@ -341,10 +345,14 @@ Three shipped examples, simplest to most complex:
 3. **Complex -- `prompts/escalation_decision.yaml`** (`templatingDemo.escalate`).
    Placeholders in *both* `system_prompt` (changes persona per
    `{{customer_tier}}`) and `user_prompt` (a 6-field case dossier), paired
-   with a full capability-key spread on the step in `process_registry.yaml`:
-   `max_turns`, `permission_mode`, `thinking` (agent_sdk) and
-   `temperature`, `top_p`, `max_tokens` (messages_api) all set at once --
-   each backend consumes only the keys it understands.
+   with a capability-key spread on the step in `process_registry.yaml`:
+   `max_turns`, `permission_mode`, `thinking` -- all `agent_sdk` keys,
+   since this step is called with `backend="agent_sdk"` below. A
+   backend's capability keys are validated against
+   `capability_registry.yaml`'s whitelist for that backend before the
+   call happens; `messages_api`-only keys (`temperature`, `top_p`,
+   `max_tokens`) would fail that check here, since the two backends'
+   allowed sets are disjoint, not a shared superset.
    ```python
    execute({{
        "process": "templatingDemo", "step": "escalate",
@@ -362,16 +370,27 @@ Three shipped examples, simplest to most complex:
 
 Full capability-passthrough key reference (any step key besides
 `prompt`/`model`/`fallback`/`system_prompt` flows straight through to the
-model call -- see `.claude/rules/process-registry.md`):
+model call, after passing `capability_registry.yaml`'s per-backend
+whitelist -- see `.claude/rules/process-registry.md` and
+`.claude/rules/capability-registry.md`):
 
 | Key | Backend | Meaning |
 | --- | --- | --- |
 | `max_turns` | `agent_sdk` | cap on agentic turns for the step |
 | `permission_mode` | `agent_sdk` | e.g. `acceptEdits`, `bypassPermissions`, `default`, `plan` |
 | `thinking` | `agent_sdk` | extended thinking, `{{type: enabled, budget_tokens: N}}` |
+| `max_thinking_tokens` | `agent_sdk` | thinking token budget (alternate form) |
+| `effort` | `agent_sdk` | reasoning effort level |
+| `fallback_model` | `agent_sdk` | model to fall back to within one SDK call |
 | `temperature` | `messages_api` | sampling temperature |
 | `top_p` | `messages_api` | nucleus sampling cutoff |
 | `max_tokens` | `messages_api` | response token cap |
+| `stop_sequences` | `messages_api` | strings that stop generation |
+
+A step meant to run on both backends needs two different capability
+blocks (or two different process entries) -- not one block mixing both
+key sets, since a key valid for one backend fails the other's
+whitelist.
 
 - **`.env`** -- `ENVIRONMENT` (the default environment `execute()` resolves
   auth for when a payload doesn't specify one) and `DEFAULT_MODEL` (the
@@ -1008,7 +1027,7 @@ def cmd_new(args: argparse.Namespace) -> None:
 
     print(f"\nScaffolded project '{args.project_name}' at {dest}")
     print("Created:")
-    print("  prompts/*.yaml, process_registry.yaml, batch_registry.yaml, .env, logger_config.json")
+    print("  prompts/*.yaml, process_registry.yaml, capability_registry.yaml, batch_registry.yaml, .env, logger_config.json")
     print("  pipeline/run_pipeline.py, examples/sample_usage.py, tests/test_sample_pipeline.py")
     print("  examples/file_upload_example.py, examples/batch_processing_example.py")
     print("  README.md, HOWTO.md")

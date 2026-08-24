@@ -1,0 +1,43 @@
+# capability_registry.yaml
+#
+# Whitelist of process_registry.yaml step keys allowed to pass through to
+# each backend's model call (see .claude/rules/process-registry.md's
+# "capability passthrough" rule). Validated by
+# orchestration_accelerator.registry.get_allowed_capabilities() before a
+# step's capabilities ever reach claude_agent_sdk / anthropic -- an
+# unlisted key raises UnsupportedCapabilityError immediately, instead of a
+# TypeError several layers deep inside the SDK.
+#
+# This file is deliberately NOT environment-specific (unlike .env): the
+# same keys must be valid on every environment a given backend runs in,
+# so it lives at the same tier as process_registry.yaml, not in .env.
+#
+# To add a new capability once its backend actually supports it (e.g. a
+# claude-agent-sdk/anthropic SDK bump adds a new ClaudeAgentOptions field
+# or Messages API param), add its key to the matching backend's `allowed`
+# list here -- no accelerator code change required.
+
+agent_sdk:
+  # Named fields on claude_agent_sdk.ClaudeAgentOptions that are safe to
+  # set per-step from process_registry.yaml. Deliberately NOT the full
+  # field list -- fields like cli_path/env/hooks/resume/session_id/
+  # can_use_tool are internal/session-management concerns, not per-step
+  # model-call tuning, so they stay off this whitelist even though the
+  # dataclass technically accepts them.
+  allowed:
+    - max_turns
+    - thinking
+    - max_thinking_tokens
+    - effort
+    - permission_mode
+    - fallback_model
+
+messages_api:
+  # Keyword arguments anthropic.Client.messages.create() accepts that are
+  # safe to set per-step from process_registry.yaml.
+  allowed:
+    - temperature
+    - top_p
+    - max_tokens
+    - thinking
+    - stop_sequences

@@ -54,7 +54,15 @@ in this path — it is entirely driven by the payload and by
   (`max_turns`, `thinking`, `temperature`, `top_p`, `permission_mode`, ...)
   is a capability passthrough — it flows untouched through `core.py` ->
   `execute_with_fallback()` -> the chosen backend's model call, so
-  per-step model behavior is tunable from config alone.
+  per-step model behavior is tunable from config alone. Every capability
+  key is checked against `capability_registry.yaml`'s per-backend
+  whitelist first — an unlisted key raises `UnsupportedCapabilityError`
+  before the model call, not a `TypeError` deep inside the SDK.
+- `capability_registry.yaml` is the whitelist of capability keys allowed
+  per backend (`agent_sdk` / `messages_api`) — see
+  `.claude/rules/capability-registry.md`. Not environment-specific
+  (unlike `.env`): the same keys must be valid on every environment a
+  backend runs in.
 - `.env` carries `ENVIRONMENT` (default resolved environment) and
   `DEFAULT_MODEL` (used by the built-in default configuration fallback
   when a `(process, step)` isn't defined in `process_registry.yaml`).
