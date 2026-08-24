@@ -555,10 +555,20 @@ Example 1 (static input) -- TicketClassifier wraps the ticketClassification
 process, whose classify.yaml prompt has no {{key}} placeholders, so
 `input` is just a plain string.
 
-Example 2 (dynamic / templated input) -- TicketTriager wraps the
-templatingDemo process's `triage` step, whose ticket_triage.yaml prompt
-has {{key}} placeholders. `input` here must be a dict covering every
-placeholder -- PromptManager.render() fills them in at call time.
+Example 2 (dynamic / templated input, single step) -- TicketTriager
+wraps templatingDemo's `triage` step alone (step is narrowed), whose
+ticket_triage.yaml prompt has {{key}} placeholders. `input` here must
+be a dict covering every placeholder triage.yaml declares --
+PromptManager.render() fills them in at call time.
+
+Example 3 (dynamic / templated input, full process) -- TicketEscalator
+wraps templatingDemo with NO `step` narrowing, so both `triage` and
+`escalate` run in order against the SAME `input` dict. `escalate`
+needs two keys `triage` doesn't (account_history,
+sla_minutes_remaining), so `input` here is the union of every
+placeholder either step declares. Each step only consumes the subset
+it needs from the shared dict -- a key destined for the other step is
+present but simply unused for a given step, not an error.
 """
 
 from project_accelerator import execute
@@ -582,7 +592,7 @@ class TicketClassifier:
 
 
 class TicketTriager:
-    """Thin wrapper around execute() for templatingDemo's `triage` step (dynamic/templated input)."""
+    """Thin wrapper around execute() for templatingDemo's `triage` step alone (dynamic/templated input)."""
 
     def __init__(self, environment: str = "local", backend: str = "agent_sdk") -> None:
         self.environment = environment
@@ -603,19 +613,64 @@ class TicketTriager:
         })
 
 
+class TicketEscalator:
+    """Thin wrapper around execute() for templatingDemo's full process (triage + escalate, no step narrowing)."""
+
+    def __init__(self, environment: str = "local", backend: str = "agent_sdk") -> None:
+        self.environment = environment
+        self.backend = backend
+
+    def run(
+        self,
+        ticket_id: str,
+        customer_name: str,
+        customer_tier: str,
+        body: str,
+        account_history: str,
+        sla_minutes_remaining: int,
+    ) -> dict:
+        return execute({
+            "process": "templatingDemo",
+            # no "step" -- runs triage then escalate, in the order
+            # process_registry.yaml's `steps` list declares.
+            "input": {
+                "ticket_id": ticket_id,
+                "customer_name": customer_name,
+                "customer_tier": customer_tier,
+                "body": body,
+                "account_history": account_history,
+                "sla_minutes_remaining": sla_minutes_remaining,
+            },
+            "environment": self.environment,
+            "backend": self.backend,
+        })
+
+
 def main() -> None:
     print("--- Example 1: static input ---")
     classifier = TicketClassifier()
     result = classifier.classify("sample ticket text")
     print(result)
 
-    print("--- Example 2: dynamic / templated input ---")
+    print("--- Example 2: dynamic / templated input, single step ---")
     triager = TicketTriager()
     result = triager.triage(
         ticket_id="T-1",
         customer_name="Ada",
         customer_tier="gold",
         body="My invoice is wrong",
+    )
+    print(result)
+
+    print("--- Example 3: dynamic / templated input, full process (triage + escalate) ---")
+    escalator = TicketEscalator()
+    result = escalator.run(
+        ticket_id="T-1",
+        customer_name="Ada",
+        customer_tier="gold",
+        body="My invoice is wrong",
+        account_history="3 prior tickets, no refunds issued",
+        sla_minutes_remaining=45,
     )
     print(result)
 
