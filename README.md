@@ -34,9 +34,14 @@ payload's `"backend"`:
 
 `agent_sdk` keys pass through `auth_accelerator.build_options(**extra)`
 into `ClaudeAgentOptions`; `messages_api` keys pass through directly to
-`anthropic.messages.create(**extra)`. See
-`.claude/rules/process-registry.md` for the full schema and
-`process_registry.yaml`'s `classify` step for a live example
+`anthropic.messages.create(**extra)`. Every capability key is checked
+against `capability_registry.yaml`'s per-backend whitelist first -- an
+unlisted key raises `UnsupportedCapabilityError` immediately, not a
+`TypeError` deep inside the SDK/API client (the two backends' allowed
+sets are disjoint, not a shared superset -- see
+`.claude/rules/capability-registry.md`). See
+`.claude/rules/process-registry.md` for the full `process_registry.yaml`
+schema and `process_registry.yaml`'s `classify` step for a live example
 (`max_turns: 1`).
 
 ## Environment configuration
