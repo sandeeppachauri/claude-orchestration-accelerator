@@ -68,10 +68,13 @@ enforced by `PromptManager.render()` (mandatory, not optional):
 - **Prompt has `{{key}}` placeholders** — `input` must be a dict of
   `{key: value}`. `user_prompt` becomes required in the prompt YAML (it
   is the user turn once templating is in play). Every placeholder in
-  `system_prompt`/`user_prompt` must have a matching dict key, and every
-  dict key must be consumed by some placeholder — either direction
-  mismatching raises `PromptValidationError` immediately, so the config
-  and the call site can never silently drift apart.
+  `system_prompt`/`user_prompt` must have a matching dict key, or
+  `PromptValidationError` is raised immediately, so the config and the
+  call site can never silently drift apart. Extra dict keys not
+  referenced by this step's placeholders are allowed and ignored — a
+  multi-step run without an explicit `step` shares one flat `input`
+  dict across all steps, and different steps may need different
+  subsets of it.
 
 See `prompts/classify.yaml` (no placeholders), `prompts/ticket_triage.yaml`
 (multiple placeholders, static prompt around them), and

@@ -89,11 +89,14 @@ execute({
 })
 ```
 
-The match is mandatory both ways, enforced by `PromptManager.render()`:
-no placeholders in the prompt ⇒ `input` must be a plain string; any
-`{{key}}` present ⇒ `input` must be a dict covering every placeholder
-with no unused keys, and the prompt's `user_prompt` field becomes
-required. Either mismatch raises `PromptValidationError` immediately.
+Enforced by `PromptManager.render()`: no placeholders in the prompt ⇒
+`input` must be a plain string; any `{{key}}` present ⇒ `input` must be
+a dict covering every placeholder, and the prompt's `user_prompt` field
+becomes required. Either mismatch raises `PromptValidationError`
+immediately. Extra dict keys not referenced by this step's placeholders
+are allowed and ignored -- a multi-step run without an explicit `step`
+shares one flat `input` dict across steps that may need different
+subsets of it.
 
 See `process_registry.yaml`'s `templatingDemo` process and
 `prompts/classify.yaml` (no placeholders) / `prompts/ticket_triage.yaml`

@@ -134,10 +134,13 @@ class PromptManager:
           - a dict of `{key: value}`: template path. The step's
             `user_prompt` field is then REQUIRED (there is nothing else
             to send as the user turn). Every `{{key}}` in `system_prompt`
-            and `user_prompt` must have a matching dict key, and every
-            dict key must be consumed by at least one placeholder --
-            either direction mismatching raises `PromptValidationError`
-            so config and call site can never silently drift apart.
+            and `user_prompt` must have a matching dict key, else
+            `PromptValidationError` is raised so config and call site
+            can never silently drift apart. Extra dict keys not used by
+            this step's placeholders are allowed and ignored -- a
+            multi-step run shares one flat `input` dict across steps
+            with different placeholder needs, so a key meant for another
+            step must not fail this one.
 
         Returns (cfg, rendered_system_prompt, rendered_user_content).
         """
@@ -176,13 +179,6 @@ class PromptManager:
             raise PromptValidationError(
                 f"Step '{step}' prompt requires placeholder(s) {sorted(missing)} "
                 f"not present in the supplied input {sorted(values.keys())}."
-            )
-
-        unused = values.keys() - placeholders
-        if unused:
-            raise PromptValidationError(
-                f"Step '{step}' input supplies key(s) {sorted(unused)} that are "
-                f"not referenced by any {{{{key}}}} placeholder in the prompt."
             )
 
         def _sub(text: str) -> str:

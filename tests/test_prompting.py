@@ -100,23 +100,24 @@ def test_render_missing_placeholder_key_raises():
         pass
 
 
-def test_render_unused_key_raises():
+def test_render_extra_key_ignored():
+    """Extra dict keys not referenced by this step's placeholders are
+    allowed -- a multi-step run shares one flat `input` dict across
+    steps with different placeholder needs."""
     pm = PromptManager()
-    try:
-        pm.render(
-            "ticket_triage",
-            {
-                "ticket_id": "T-1",
-                "customer_name": "Ada",
-                "customer_tier": "gold",
-                "body": "x",
-                "extra_unused": "y",
-            },
-            filename="ticket_triage.yaml",
-        )
-        assert False, "expected PromptValidationError"
-    except PromptValidationError:
-        pass
+    cfg, system_prompt, user_content = pm.render(
+        "ticket_triage",
+        {
+            "ticket_id": "T-1",
+            "customer_name": "Ada",
+            "customer_tier": "gold",
+            "body": "x",
+            "extra_unused": "y",
+        },
+        filename="ticket_triage.yaml",
+    )
+    assert "extra_unused" not in system_prompt
+    assert "extra_unused" not in user_content
 
 
 def test_render_placeholders_string_input_raises():
