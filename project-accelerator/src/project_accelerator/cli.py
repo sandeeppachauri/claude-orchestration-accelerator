@@ -826,10 +826,18 @@ def _install_accelerators(
     # `project_accelerator`, not just its dependencies.
     if REPO_ROOT.exists() and (REPO_ROOT / "pyproject.toml").exists():
         subprocess.run(
-            [python_exe, "-m", "pip", "install", "-e", str(REPO_ROOT), "--quiet"], check=True
+            [python_exe, "-m", "pip", "install", "-e", f"{REPO_ROOT}[batch]", "--quiet"], check=True
         )
         subprocess.run(
-            [python_exe, "-m", "pip", "install", "-e", str(REPO_ROOT / "model-router"), "--quiet"],
+            [
+                python_exe,
+                "-m",
+                "pip",
+                "install",
+                "-e",
+                f"{REPO_ROOT / 'model-router'}[agent_sdk,messages_api]",
+                "--quiet",
+            ],
             check=True,
         )
         subprocess.run(
@@ -838,7 +846,14 @@ def _install_accelerators(
         )
     else:
         subprocess.run(
-            [python_exe, "-m", "pip", "install", f"git+{ORCHESTRATION_GIT_URL}", "--quiet"],
+            [
+                python_exe,
+                "-m",
+                "pip",
+                "install",
+                f"claude-orchestration-accelerator[batch] @ git+{ORCHESTRATION_GIT_URL}",
+                "--quiet",
+            ],
             check=True,
         )
         subprocess.run(
@@ -847,6 +862,7 @@ def _install_accelerators(
                 "-m",
                 "pip",
                 "install",
+                f"claude-model-router-accelerator[agent_sdk,messages_api] @ "
                 f"git+{ORCHESTRATION_GIT_URL}#subdirectory=model-router",
                 "--quiet",
             ],

@@ -4,8 +4,8 @@ version = "0.1.0"
 description = "Master accelerator: execute(payload) entry point + cpa scaffold CLI, composing auth, logging, prompt resolution, and model routing"
 requires-python = ">=3.10"
 dependencies = [
-    "claude-orchestration-accelerator @ git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git",
-    "claude-model-router-accelerator @ git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=model-router",
+    "claude-orchestration-accelerator[batch] @ git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git",
+    "claude-model-router-accelerator[agent_sdk,messages_api] @ git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=model-router",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0",
 ]
