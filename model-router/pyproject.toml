@@ -13,7 +13,7 @@ agent_sdk = [
 ]
 messages_api = [
     "anthropic>=0.40.0",
-    "claude-auth-accelerator>=0.2.0",
+    "claude-auth-accelerator @ git+https://github.com/sandeeppachauri/Accelerators.git#subdirectory=claude-auth-accelerator",
 ]
 dev = [
     "pytest>=8.0.0",
