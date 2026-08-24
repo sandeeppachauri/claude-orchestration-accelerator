@@ -50,7 +50,12 @@ templatingDemo:
     # sets are disjoint, not a shared superset.
     max_turns: 3                                   # agent_sdk
     permission_mode: acceptEdits                    # agent_sdk
-    thinking: {type: enabled, budget_tokens: 4096}  # agent_sdk
+    # thinking disabled by default -- extended-thinking turns count
+    # against max_turns and can starve the final JSON-text turn, leaving
+    # raw_output empty and validate_output's json.loads() failing with
+    # "Expecting value: line 1 column 1". Re-enable only with a max_turns
+    # bump to cover the extra turn(s):
+    # thinking: {type: enabled, budget_tokens: 4096}  # agent_sdk
     # If this step instead ran with backend="messages_api", the live keys
     # would be messages_api-only, e.g.:
     #   temperature: 0.2
