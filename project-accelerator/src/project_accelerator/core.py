@@ -10,7 +10,9 @@ Composes, in order:
   3. Call the model with fallback via claude-model-router-accelerator.
   4. Validate output against the prompt's format contract (skipped for
      the generic default configuration, which has no format contract).
-  5. Log the turn via orchestration_accelerator's default logging wrapper.
+  5. Log MODEL_CALL_START before the model call, MODEL_CALL_END and
+     FULL_TURN after it, via orchestration_accelerator's default logging
+     wrapper.
 
 Nothing about which process/step/model/backend runs is hardcoded here --
 it is entirely driven by `payload` and by process_registry.yaml. Payload
@@ -226,6 +228,14 @@ async def _run_one_step(
                 )
             user_content = input_data
 
+        await _log_best_effort(
+            "MODEL_CALL_START",
+            session_id,
+            turn_index,
+            model=model,
+            payload={"step": step_name, "input": input_data},
+        )
+
         raw_output = await execute_with_fallback(
             model=model,
             fallback=fallback,
@@ -237,11 +247,19 @@ async def _run_one_step(
         )
 
         await _log_best_effort(
+            "MODEL_CALL_END",
+            session_id,
+            turn_index,
+            model=model,
+            payload={"step": step_name, "output": raw_output},
+        )
+
+        await _log_best_effort(
             "FULL_TURN",
             session_id,
             turn_index,
             model=model,
-            payload={"step": step_name, "input": input_data},
+            payload={"step": step_name, "input": input_data, "output": raw_output},
         )
 
         if cfg is not None:

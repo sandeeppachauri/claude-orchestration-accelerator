@@ -17,7 +17,7 @@ pip install -e .
   and provides `get_default_step_config()` for the built-in default
   fallback (one model from `DEFAULT_MODEL`, one generic system prompt).
 - `orchestration_accelerator.logging` — default logging wrapper. Ships
-  `logger_config.json` (all 8 scopes enabled) and calls
+  `logger_config.json` (all 10 scopes enabled) and calls
   `sdk_logger_accelerator.configure()` automatically; `get_default_hooks()`
   returns a `ClaudeAgentOptions.hooks`-shaped dict wiring the pre/post
   tool-use hooks. Requires the `logging` extra

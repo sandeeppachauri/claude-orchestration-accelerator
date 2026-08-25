@@ -79,9 +79,9 @@ def test_step_failure_logs_error_scope_not_full_turn(monkeypatch):
             }
         )
 
-    assert [c["scope"] for c in calls] == ["ERROR"]
-    assert calls[0]["payload"]["step"] == "classify"
-    assert calls[0]["payload"]["error_type"] == "ValueError"
+    assert [c["scope"] for c in calls] == ["MODEL_CALL_START", "ERROR"]
+    assert calls[1]["payload"]["step"] == "classify"
+    assert calls[1]["payload"]["error_type"] == "ValueError"
 
 
 def test_invalid_backend_raises():

@@ -66,7 +66,7 @@ in this path — it is entirely driven by the payload and by
 - `.env` carries `ENVIRONMENT` (default resolved environment) and
   `DEFAULT_MODEL` (used by the built-in default configuration fallback
   when a `(process, step)` isn't defined in `config/process_registry.yaml`).
-- `logger_config.json` configures the default logging wrapper (all 8
+- `logger_config.json` configures the default logging wrapper (all 10
   scopes enabled by default).
 - A step may also set `mcp_servers`/`allowed_tools` (MCP access scoping)
   and `skills` (native per-skill restriction) — see
