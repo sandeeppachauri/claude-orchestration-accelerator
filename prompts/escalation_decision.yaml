@@ -39,6 +39,9 @@ user_prompt: |
   SLA minutes remaining: {{sla_minutes_remaining}}
   Ticket body:          {{body}}
 
+  Triage note from the prior step:
+  {{triage_output}}
+
   Decide: escalate (true/false), urgency (low/medium/high), and a one
   sentence reason grounded in the account history and SLA figures above.
   Respond as JSON: {"escalate": ..., "urgency": ..., "reason": ...}

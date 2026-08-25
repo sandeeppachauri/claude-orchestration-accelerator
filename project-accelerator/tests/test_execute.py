@@ -190,6 +190,8 @@ def test_execute_multi_field_dict_input_survives_across_steps(monkeypatch):
     assert "My invoice is wrong" in escalate_user_content
     assert "3 prior tickets, no refunds issued" in escalate_user_content
     assert "45" in escalate_user_content
+    # triage's output must also be threaded in via {{triage_output}}.
+    assert "escalate to billing team" in escalate_user_content
 
 
 def test_execute_full_process_threads_prior_step_outputs(monkeypatch):
@@ -296,6 +298,7 @@ def test_escalate_step_capabilities_are_agent_sdk_whitelisted(monkeypatch):
                 "account_history": "2 prior tickets",
                 "sla_minutes_remaining": "15",
                 "body": "Site is down",
+                "triage_output": "Category: technical. Urgency: high.",
             },
             "backend": "agent_sdk",
         }

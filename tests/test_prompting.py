@@ -149,6 +149,7 @@ def test_render_complex_both_prompts_have_placeholders():
         "account_history": "2 prior tickets",
         "sla_minutes_remaining": "15",
         "body": "Site is down",
+        "triage_output": "Category: technical. Urgency: high.",
     }
     cfg, system_prompt, user_content = pm.render(
         "escalation_decision", values, filename="escalation_decision.yaml"
