@@ -24,6 +24,8 @@ from typing import Any
 
 import yaml
 
+from orchestration_accelerator.errors import friendly_error
+
 # Ships at the orchestration_accelerator package root -- also the default
 # file every scaffolded project starts with (claude-project-accelerator's
 # scaffold command copies this same file).
@@ -83,8 +85,12 @@ def get_process(
     registry = load_registry(path)
     if process not in registry:
         raise ProcessNotFoundError(
-            f"No process '{process}' defined in {path}. Known processes: "
-            f"{sorted(registry.keys())}"
+            friendly_error(
+                f"The process '{process}' doesn't exist -- check the process "
+                f"name in your request for typos, or add it to process_registry.yaml.",
+                f"No process '{process}' defined in {path}. Known processes: "
+                f"{sorted(registry.keys())}",
+            )
         )
 
     block = registry[process]
@@ -93,8 +99,13 @@ def get_process(
     for step_name in steps:
         if step_name not in block:
             raise StepNotFoundError(
-                f"Process '{process}' lists step '{step_name}' in `steps` "
-                f"but has no matching config block for it."
+                friendly_error(
+                    f"Process '{process}' is misconfigured -- step '{step_name}' is "
+                    f"listed as part of the workflow but has no settings defined "
+                    f"for it. This needs a config fix, not a retry.",
+                    f"Process '{process}' lists step '{step_name}' in `steps` "
+                    f"but has no matching config block for it.",
+                )
             )
         step_config[step_name] = block[step_name]
 
@@ -118,8 +129,13 @@ def get_process_by_id(
         if isinstance(block, dict) and block.get("id") == process_id:
             return process_name, block
     raise ProcessNotFoundError(
-        f"No process with id '{process_id}' defined in {path}. Known ids: "
-        f"{sorted(b.get('id') for b in registry.values() if isinstance(b, dict))}"
+        friendly_error(
+            f"No process is registered with id '{process_id}' -- check the "
+            f"batch job's `process` value against each process's `id` field "
+            f"in process_registry.yaml (not its top-level key name).",
+            f"No process with id '{process_id}' defined in {path}. Known ids: "
+            f"{sorted(b.get('id') for b in registry.values() if isinstance(b, dict))}",
+        )
     )
 
 
@@ -149,10 +165,16 @@ def validate_capabilities(
     unsupported = capabilities.keys() - allowed
     if unsupported:
         raise UnsupportedCapabilityError(
-            f"Capability key(s) {sorted(unsupported)} are not whitelisted "
-            f"for backend '{backend}' in {path}. Allowed for '{backend}': "
-            f"{sorted(allowed)}. Add the key to capability_registry.yaml's "
-            f"'{backend}' section once that backend actually supports it."
+            friendly_error(
+                f"This step's config uses a setting that isn't supported for "
+                f"how it's being run ({backend}) -- either remove that "
+                f"setting from process_registry.yaml, or switch to a backend "
+                f"that supports it.",
+                f"Capability key(s) {sorted(unsupported)} are not whitelisted "
+                f"for backend '{backend}' in {path}. Allowed for '{backend}': "
+                f"{sorted(allowed)}. Add the key to capability_registry.yaml's "
+                f"'{backend}' section once that backend actually supports it.",
+            )
         )
 
 

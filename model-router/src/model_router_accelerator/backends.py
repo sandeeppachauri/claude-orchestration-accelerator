@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from orchestration_accelerator.errors import friendly_error
+
 from .exceptions import AgentProducedNoTextError, RateLimitOrOverloadError
 
 _RATE_LIMIT_MARKERS = ("rate limit", "rate_limit", "overloaded", "429", "529")
@@ -105,12 +107,18 @@ async def call_agent_sdk(
 
     if not text:
         raise AgentProducedNoTextError(
-            f"agent_sdk query for model {model!r} completed with max_turns={max_turns} "
-            f"but produced no text output ({tool_call_count} tool call(s) made instead). "
-            "The model likely spent its whole turn budget on tool use rather than "
-            "replying -- check this step's `tools`/`permission_mode` in "
-            "process_registry.yaml (set `tools: []` if the step should never need a "
-            "tool), or raise max_turns if tool use is actually required."
+            friendly_error(
+                "The AI didn't produce an answer for this step -- it spent its "
+                "whole turn budget doing other actions instead of replying, so "
+                "there's no output to show. This is a config problem, not "
+                "something a retry alone will fix.",
+                f"agent_sdk query for model {model!r} completed with "
+                f"max_turns={max_turns} but produced no text output "
+                f"({tool_call_count} tool call(s) made instead). Check this "
+                f"step's `tools`/`permission_mode` in process_registry.yaml "
+                f"(set `tools: []` if the step should never need a tool), or "
+                f"raise max_turns if tool use is actually required.",
+            )
         )
     return text
 

@@ -35,6 +35,8 @@ from typing import Any
 
 import yaml
 
+from orchestration_accelerator.errors import friendly_error
+
 _PLACEHOLDER_RE = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
 # Default: <repo-or-package-root>/prompts -- i.e. three levels up from this
@@ -96,7 +98,13 @@ class PromptManager:
         `<step>.yaml` when omitted."""
         path = self.prompts_dir / (filename or f"{step}.yaml")
         if not path.exists():
-            raise PromptValidationError(f"No prompt config found for step '{step}' at {path}")
+            raise PromptValidationError(
+                friendly_error(
+                    f"Step '{step}' has no prompt file to run -- this is a "
+                    f"setup/config problem, not something the input caused.",
+                    f"No prompt config found for step '{step}' at {path}",
+                )
+            )
 
         with open(path, "r") as f:
             raw = yaml.safe_load(f)
@@ -104,10 +112,14 @@ class PromptManager:
         missing = self.REQUIRED_FIELDS - raw.keys()
         if missing:
             raise PromptValidationError(
-                f"Prompt config for '{step}' is missing required Description "
-                f"fields: {sorted(missing)}. A prompt without scope/format/"
-                f"constraints is exactly the under-described prompt that "
-                f"breaks in production."
+                friendly_error(
+                    f"The prompt file for step '{step}' is incomplete and needs "
+                    f"a developer to fix it before this step can run.",
+                    f"Prompt config for '{step}' is missing required Description "
+                    f"fields: {sorted(missing)}. A prompt without scope/format/"
+                    f"constraints is exactly the under-described prompt that "
+                    f"breaks in production.",
+                )
             )
 
         return PromptConfig(
@@ -153,32 +165,50 @@ class PromptManager:
         if isinstance(values, str):
             if placeholders:
                 raise PromptValidationError(
-                    f"Step '{step}' prompt declares placeholder(s) {sorted(placeholders)} "
-                    f"but was called with a plain string input. Pass a dict of "
-                    f"{{key: value}} covering every placeholder instead."
+                    friendly_error(
+                        f"The input sent for step '{step}' is the wrong shape -- "
+                        f"it needs to be a set of named fields, not a single block "
+                        f"of text.",
+                        f"Step '{step}' prompt declares placeholder(s) "
+                        f"{sorted(placeholders)} but was called with a plain "
+                        f"string input. Pass a dict of {{key: value}} covering "
+                        f"every placeholder instead.",
+                    )
                 )
             return cfg, cfg.system_prompt, values
 
         # values is a dict from here on.
         if not placeholders:
             raise PromptValidationError(
-                f"Step '{step}' prompt has no {{{{key}}}} placeholders but was "
-                f"called with a dict input {sorted(values.keys())}. Pass a plain "
-                f"string, or add placeholders to the prompt YAML."
+                friendly_error(
+                    f"The input sent for step '{step}' is the wrong shape -- "
+                    f"it needs to be a single block of text, not named fields.",
+                    f"Step '{step}' prompt has no {{{{key}}}} placeholders but was "
+                    f"called with a dict input {sorted(values.keys())}. Pass a plain "
+                    f"string, or add placeholders to the prompt YAML.",
+                )
             )
 
         if cfg.user_prompt is None:
             raise PromptValidationError(
-                f"Step '{step}' input is a dict but the prompt YAML has no "
-                f"'user_prompt' field -- a templated step must define "
-                f"'user_prompt' as the user turn."
+                friendly_error(
+                    f"Step '{step}' is misconfigured and needs a developer fix "
+                    f"before it can accept structured input.",
+                    f"Step '{step}' input is a dict but the prompt YAML has no "
+                    f"'user_prompt' field -- a templated step must define "
+                    f"'user_prompt' as the user turn.",
+                )
             )
 
         missing = placeholders - values.keys()
         if missing:
             raise PromptValidationError(
-                f"Step '{step}' prompt requires placeholder(s) {sorted(missing)} "
-                f"not present in the supplied input {sorted(values.keys())}."
+                friendly_error(
+                    f"The input sent for step '{step}' is missing some required "
+                    f"information: {sorted(missing)}.",
+                    f"Step '{step}' prompt requires placeholder(s) {sorted(missing)} "
+                    f"not present in the supplied input {sorted(values.keys())}.",
+                )
             )
 
         def _sub(text: str) -> str:
@@ -200,25 +230,53 @@ class PromptManager:
             allowed = fmt["allowed_values"]
             if value not in allowed:
                 raise OutputContractError(
-                    f"[{step} v{cfg.version}] output '{output!r}' is not one of "
-                    f"the allowed_values {allowed}"
+                    friendly_error(
+                        f"The model's answer for step '{step}' wasn't one of the "
+                        f"expected options ({', '.join(allowed)}) -- the run "
+                        f"needs to be retried or the prompt adjusted.",
+                        f"[{step} v{cfg.version}] output '{output!r}' is not one of "
+                        f"the allowed_values {allowed}",
+                    )
                 )
             return value
 
         if fmt["type"] == "json":
+            if not output.strip():
+                raise OutputContractError(
+                    friendly_error(
+                        f"Step '{step}' got no answer back from the model at all "
+                        f"(empty response), so there's nothing to check against "
+                        f"the expected JSON format. This usually means the model "
+                        f"ran out of turns doing something else (e.g. tool calls) "
+                        f"before it could reply -- check this step's `tools`/"
+                        f"`max_turns`/`permission_mode` in process_registry.yaml.",
+                        f"[{step} v{cfg.version}] output is empty ('').",
+                    )
+                )
             try:
                 parsed = json.loads(output.strip())
             except json.JSONDecodeError as e:
                 raise OutputContractError(
-                    f"[{step} v{cfg.version}] output is not valid JSON: {e}"
+                    friendly_error(
+                        f"The model's answer for step '{step}' wasn't valid JSON, "
+                        f"so it couldn't be processed. The run needs to be "
+                        f"retried, or the prompt/model needs adjusting.",
+                        f"[{step} v{cfg.version}] output is not valid JSON: {e}. "
+                        f"Raw output: {output!r}",
+                    )
                 ) from e
 
             expected_keys = set(fmt["schema"].keys())
             actual_keys = set(parsed.keys())
             if actual_keys != expected_keys:
                 raise OutputContractError(
-                    f"[{step} v{cfg.version}] JSON keys {sorted(actual_keys)} "
-                    f"do not match contract {sorted(expected_keys)}"
+                    friendly_error(
+                        f"The model's answer for step '{step}' didn't include the "
+                        f"expected fields -- the run needs to be retried or the "
+                        f"prompt adjusted.",
+                        f"[{step} v{cfg.version}] JSON keys {sorted(actual_keys)} "
+                        f"do not match contract {sorted(expected_keys)}",
+                    )
                 )
 
             urgency_spec = fmt["schema"].get("urgency", "")
@@ -226,8 +284,13 @@ class PromptManager:
                 allowed = [v.strip() for v in urgency_spec[5:-1].split(",")]
                 if parsed.get("urgency") not in allowed:
                     raise OutputContractError(
-                        f"[{step} v{cfg.version}] urgency '{parsed.get('urgency')}' "
-                        f"not in {allowed}"
+                        friendly_error(
+                            f"The model gave an urgency level for step '{step}' "
+                            f"that isn't one of the expected options "
+                            f"({', '.join(allowed)}).",
+                            f"[{step} v{cfg.version}] urgency '{parsed.get('urgency')}' "
+                            f"not in {allowed}",
+                        )
                     )
             return parsed
 
@@ -236,9 +299,19 @@ class PromptManager:
             max_words = fmt.get("max_words")
             if max_words and word_count > max_words:
                 raise OutputContractError(
-                    f"[{step} v{cfg.version}] output is {word_count} words, "
-                    f"exceeds max_words={max_words}"
+                    friendly_error(
+                        f"The model's answer for step '{step}' was longer than "
+                        f"allowed ({word_count} words, limit {max_words}).",
+                        f"[{step} v{cfg.version}] output is {word_count} words, "
+                        f"exceeds max_words={max_words}",
+                    )
                 )
             return output.strip()
 
-        raise OutputContractError(f"Unknown format type '{fmt['type']}' in contract")
+        raise OutputContractError(
+            friendly_error(
+                f"Step '{step}' has an invalid output format configured -- this "
+                f"needs a developer fix in the prompt file, not a retry.",
+                f"Unknown format type '{fmt['type']}' in contract",
+            )
+        )

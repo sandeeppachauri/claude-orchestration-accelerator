@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from orchestration_accelerator.environment import resolve_environment
+from orchestration_accelerator.errors import friendly_error
 from orchestration_accelerator.prompting import PromptManager
 from orchestration_accelerator.registry import (
     ProcessNotFoundError,
@@ -50,14 +51,28 @@ class PayloadValidationError(Exception):
 def _validate_payload(payload: dict[str, Any]) -> None:
     missing = REQUIRED_PAYLOAD_KEYS - payload.keys()
     if missing:
-        raise PayloadValidationError(f"payload is missing required key(s): {sorted(missing)}")
+        raise PayloadValidationError(
+            friendly_error(
+                f"This request is missing required information: {sorted(missing)}.",
+                f"payload is missing required key(s): {sorted(missing)}",
+            )
+        )
     unknown = set(payload.keys()) - KNOWN_PAYLOAD_KEYS
     if unknown:
-        raise PayloadValidationError(f"payload has unknown key(s): {sorted(unknown)}")
+        raise PayloadValidationError(
+            friendly_error(
+                f"This request includes fields that aren't recognized: "
+                f"{sorted(unknown)}. Remove them or check for typos.",
+                f"payload has unknown key(s): {sorted(unknown)}",
+            )
+        )
     if payload["backend"] not in VALID_BACKENDS:
         raise PayloadValidationError(
-            f"payload['backend'] must be one of {sorted(VALID_BACKENDS)}, "
-            f"got {payload['backend']!r}"
+            friendly_error(
+                f"The requested execution backend isn't supported.",
+                f"payload['backend'] must be one of {sorted(VALID_BACKENDS)}, "
+                f"got {payload['backend']!r}",
+            )
         )
 
 
@@ -132,12 +147,32 @@ def _resolve_step_configs(process_name: str, only_step: str | None) -> list[tupl
     if only_step is not None:
         if only_step not in steps:
             raise StepNotFoundError(
-                f"Step '{only_step}' is not part of process '{process_name}''s "
-                f"steps {steps}."
+                friendly_error(
+                    f"The requested step '{only_step}' doesn't exist for process "
+                    f"'{process_name}' -- check the step name for typos, or the "
+                    f"available steps are: {steps}.",
+                    f"Step '{only_step}' is not part of process '{process_name}''s "
+                    f"steps {steps}.",
+                )
             )
         steps = [only_step]
 
     return [(step, process["step_config"][step]) for step in steps]
+
+
+async def _log_best_effort(scope: str, session_id: str, turn_index: int, **fields: Any) -> None:
+    """Logging must never take down the pipeline itself -- a tracing
+    backend outage is not the caller's problem. Used for both success
+    (FULL_TURN) and failure (ERROR) events, so a run's log trace always
+    has an entry for every step attempted, not just the ones that
+    happened to succeed."""
+    try:
+        _ensure_project_logging_configured()
+        from orchestration_accelerator.logging import log
+
+        await log(scope, session_id, turn_index, **fields)
+    except Exception:
+        pass
 
 
 async def _run_one_step(
@@ -150,83 +185,119 @@ async def _run_one_step(
     turn_index: int,
     prompts_dir: Path,
 ) -> Any:
-    prompt_file = step_config.get("prompt")
-    model = step_config["model"]
-    fallback = step_config.get("fallback", [])
-    # Any other key in the step's process_registry.yaml block (max_turns,
-    # thinking, temperature, top_p, permission_mode, ...) passes straight
-    # through to the model call -- lets a step's capabilities be tuned
-    # from config alone, no accelerator code change required.
-    capabilities = {
-        k: v
-        for k, v in step_config.items()
-        if k not in ("prompt", "model", "fallback", "system_prompt")
-    }
-    if capabilities:
-        validate_capabilities(
-            capabilities, backend, path=_resolve_capability_registry_path()
-        )
-
-    if prompt_file is not None:
-        pm = PromptManager(prompts_dir=prompts_dir)
-        cfg, system_prompt, user_content = pm.render(
-            step_name, input_data, filename=prompt_file
-        )
-    else:
-        cfg = None
-        system_prompt = step_config.get("system_prompt", "You are a helpful assistant.")
-        if not isinstance(input_data, str):
-            raise TypeError(
-                f"Step '{step_name}' has no prompt file, so a dict input has "
-                f"nowhere to be rendered -- pass a plain string."
-            )
-        user_content = input_data
-
-    raw_output = await execute_with_fallback(
-        model=model,
-        fallback=fallback,
-        system_prompt=system_prompt,
-        user_content=user_content,
-        backend=backend,
-        environment=environment,
-        **capabilities,
-    )
-
+    model = step_config.get("model", "<unresolved>")
     try:
-        _ensure_project_logging_configured()
-        from orchestration_accelerator.logging import log
+        prompt_file = step_config.get("prompt")
+        model = step_config["model"]
+        fallback = step_config.get("fallback", [])
+        # Any other key in the step's process_registry.yaml block
+        # (max_turns, thinking, temperature, top_p, permission_mode, ...)
+        # passes straight through to the model call -- lets a step's
+        # capabilities be tuned from config alone, no accelerator code
+        # change required.
+        capabilities = {
+            k: v
+            for k, v in step_config.items()
+            if k not in ("prompt", "model", "fallback", "system_prompt")
+        }
+        if capabilities:
+            validate_capabilities(
+                capabilities, backend, path=_resolve_capability_registry_path()
+            )
 
-        await log(
+        if prompt_file is not None:
+            pm = PromptManager(prompts_dir=prompts_dir)
+            cfg, system_prompt, user_content = pm.render(
+                step_name, input_data, filename=prompt_file
+            )
+        else:
+            cfg = None
+            system_prompt = step_config.get("system_prompt", "You are a helpful assistant.")
+            if not isinstance(input_data, str):
+                raise TypeError(
+                    friendly_error(
+                        f"Step '{step_name}' expects plain text input, not "
+                        f"structured fields -- this is a config/call-site "
+                        f"mismatch.",
+                        f"Step '{step_name}' has no prompt file, so a dict "
+                        f"input has nowhere to be rendered -- pass a plain "
+                        f"string.",
+                    )
+                )
+            user_content = input_data
+
+        raw_output = await execute_with_fallback(
+            model=model,
+            fallback=fallback,
+            system_prompt=system_prompt,
+            user_content=user_content,
+            backend=backend,
+            environment=environment,
+            **capabilities,
+        )
+
+        await _log_best_effort(
             "FULL_TURN",
             session_id,
             turn_index,
             model=model,
             payload={"step": step_name, "input": input_data},
         )
-    except Exception:
-        # Logging is best-effort -- a tracing failure must never take down
-        # the pipeline itself.
-        pass
 
-    if cfg is not None:
-        pm = PromptManager(prompts_dir=prompts_dir)
-        return pm.validate_output(step_name, cfg, raw_output)
-    return raw_output
+        if cfg is not None:
+            pm = PromptManager(prompts_dir=prompts_dir)
+            return pm.validate_output(step_name, cfg, raw_output)
+        return raw_output
+    except Exception as exc:
+        # Every failure path (bad capability config, prompt render/
+        # validation, the model call itself, or output-contract
+        # validation) gets an ERROR-scope log entry, same as a
+        # successful step gets a FULL_TURN entry -- a run's trace should
+        # never go silent just because that particular turn failed.
+        await _log_best_effort(
+            "ERROR",
+            session_id,
+            turn_index,
+            model=model,
+            payload={
+                "step": step_name,
+                "input": input_data,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            },
+        )
+        raise
 
 
 async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
-    _validate_payload(payload)
-
-    process_name = payload["process"]
-    only_step = payload.get("step")
-    input_data = payload["input"]
-    backend = payload["backend"]
-    environment = resolve_environment(payload.get("environment"))
-
-    _, prompts_dir = _resolve_registry_and_prompts_dir()
-    steps_to_run = _resolve_step_configs(process_name, only_step)
-
+    # A fresh session_id up front means even a failure before any step
+    # runs (bad payload shape, unknown process/step) still gets one
+    # ERROR-scope log entry -- the log trace is never silent just
+    # because the run never made it as far as a model call.
     session_id = str(uuid.uuid4())
+    try:
+        _validate_payload(payload)
+
+        process_name = payload["process"]
+        only_step = payload.get("step")
+        input_data = payload["input"]
+        backend = payload["backend"]
+        environment = resolve_environment(payload.get("environment"))
+
+        _, prompts_dir = _resolve_registry_and_prompts_dir()
+        steps_to_run = _resolve_step_configs(process_name, only_step)
+    except Exception as exc:
+        await _log_best_effort(
+            "ERROR",
+            session_id,
+            0,
+            payload={
+                "payload": payload,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            },
+        )
+        raise
     results: dict[str, Any] = {}
     for turn_index, (step_name, step_config) in enumerate(steps_to_run):
         results[step_name] = await _run_one_step(

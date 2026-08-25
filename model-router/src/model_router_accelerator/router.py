@@ -12,6 +12,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from orchestration_accelerator.errors import friendly_error
+
 from .backends import BACKENDS
 from .exceptions import FallbackChainExhaustedError, RateLimitOrOverloadError
 
@@ -36,7 +38,11 @@ async def execute_with_fallback(
     not retried across the chain)."""
     if backend not in VALID_BACKENDS:
         raise ValueError(
-            f"Unknown backend '{backend}'. Must be one of {sorted(VALID_BACKENDS)}."
+            friendly_error(
+                f"The requested execution backend isn't supported -- check "
+                f"the `backend` value in your request.",
+                f"Unknown backend '{backend}'. Must be one of {sorted(VALID_BACKENDS)}.",
+            )
         )
     call = BACKENDS[backend]
 
@@ -59,6 +65,11 @@ async def execute_with_fallback(
             continue
 
     raise FallbackChainExhaustedError(
-        f"All {len(chain)} model(s) in the fallback chain {chain} failed "
-        f"with rate-limit/overload errors. Last error: {last_error}"
+        friendly_error(
+            f"The AI service is temporarily overloaded and every configured "
+            f"backup model also failed -- this is a transient availability "
+            f"issue, not a data or config problem. Wait a moment and retry.",
+            f"All {len(chain)} model(s) in the fallback chain {chain} failed "
+            f"with rate-limit/overload errors. Last error: {last_error}",
+        )
     )

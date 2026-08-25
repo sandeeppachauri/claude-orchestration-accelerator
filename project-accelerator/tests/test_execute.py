@@ -22,9 +22,66 @@ def _patch_logging(monkeypatch):
     monkeypatch.setattr(logging_module, "log", _fake_log)
 
 
+def _patch_logging_capture(monkeypatch):
+    """Like _patch_logging, but records every call so a test can assert
+    on scope/fields instead of just swallowing them."""
+    calls = []
+
+    async def _fake_log(scope, session_id, turn_index=0, **fields):
+        calls.append({"scope": scope, "turn_index": turn_index, **fields})
+
+    import orchestration_accelerator.logging as logging_module
+
+    monkeypatch.setattr(logging_module, "log", _fake_log)
+    return calls
+
+
 def test_missing_required_key_raises():
     with pytest.raises(PayloadValidationError):
         execute({"process": "ticketClassification", "input": "x"})
+
+
+def test_missing_required_key_error_is_friendly_and_technical():
+    with pytest.raises(PayloadValidationError) as excinfo:
+        execute({"process": "ticketClassification", "input": "x"})
+    message = str(excinfo.value)
+    # Every accelerator exception carries a plain-English summary AND the
+    # exact technical detail (see orchestration_accelerator.errors) --
+    # a functional user and an engineer can both act on the same message.
+    assert "Technical detail:" in message
+    assert "missing required key" in message
+
+
+def test_missing_required_key_logs_error_scope(monkeypatch):
+    calls = _patch_logging_capture(monkeypatch)
+    with pytest.raises(PayloadValidationError):
+        execute({"process": "ticketClassification", "input": "x"})
+    error_calls = [c for c in calls if c["scope"] == "ERROR"]
+    assert len(error_calls) == 1
+    assert error_calls[0]["payload"]["error_type"] == "PayloadValidationError"
+
+
+def test_step_failure_logs_error_scope_not_full_turn(monkeypatch):
+    calls = _patch_logging_capture(monkeypatch)
+
+    async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
+
+    with pytest.raises(ValueError):
+        execute(
+            {
+                "process": "ticketClassification",
+                "step": "classify",
+                "input": "x",
+                "backend": "agent_sdk",
+            }
+        )
+
+    assert [c["scope"] for c in calls] == ["ERROR"]
+    assert calls[0]["payload"]["step"] == "classify"
+    assert calls[0]["payload"]["error_type"] == "ValueError"
 
 
 def test_invalid_backend_raises():
