@@ -16,6 +16,7 @@ of sync. Run directly: `python project-accelerator/scripts/check_scaffold_sync.p
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -25,6 +26,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ROOT_CONFIG = REPO_ROOT / "config"
 SCAFFOLD_DATA = REPO_ROOT / "project-accelerator" / "src" / "project_accelerator" / "scaffold_data"
 SCAFFOLD_CONFIG = SCAFFOLD_DATA / "config"
+CAPABILITY_RULE_DOC = REPO_ROOT / ".claude" / "rules" / "capability-registry.md"
+CLI_PY = REPO_ROOT / "project-accelerator" / "src" / "project_accelerator" / "cli.py"
 
 # Rule docs and other files kept byte-identical between root and
 # scaffold_data.
@@ -77,6 +80,88 @@ def check_capability_registry_structure(errors: list[str]) -> None:
             )
 
 
+def _extract_doc_allowed_lists(text: str) -> dict[str, set[str]]:
+    """Parses the `agent_sdk:\\n  allowed: [...]` / `messages_api:\\n
+    allowed: [...]` fence in .claude/rules/capability-registry.md's
+    illustrative schema block -- a hand-written example, not YAML loaded
+    from config/, so it drifts silently from the real registry unless
+    something checks it (this is exactly the bug that shipped stale
+    scaffolded-project docs: the registry gained mcp_servers/allowed_tools/
+    guardrails/skills but this doc's example fence was never updated)."""
+    result: dict[str, set[str]] = {}
+    for backend in ("agent_sdk", "messages_api"):
+        match = re.search(rf"{backend}:\s*\n\s*allowed:\s*\[(.*?)\]", text)
+        if match:
+            result[backend] = {k.strip() for k in match.group(1).split(",") if k.strip()}
+    return result
+
+
+def check_capability_rule_doc_matches_registry(errors: list[str]) -> None:
+    if not CAPABILITY_RULE_DOC.exists():
+        errors.append(f"missing rule doc: {CAPABILITY_RULE_DOC}")
+        return
+
+    root_cfg = _load_yaml(ROOT_CONFIG / "capability_registry.yaml")
+    doc_lists = _extract_doc_allowed_lists(CAPABILITY_RULE_DOC.read_text())
+
+    for backend in root_cfg:
+        registry_allowed = set(root_cfg.get(backend, {}).get("allowed", []))
+        doc_allowed = doc_lists.get(backend, set())
+        missing_from_doc = registry_allowed - doc_allowed
+        extra_in_doc = doc_allowed - registry_allowed
+        if missing_from_doc:
+            errors.append(
+                f".claude/rules/capability-registry.md's example fence for "
+                f"'{backend}' is missing key(s) {sorted(missing_from_doc)} "
+                f"present in config/capability_registry.yaml -- update the "
+                f"doc's illustrative `allowed: [...]` list"
+            )
+        if extra_in_doc:
+            errors.append(
+                f".claude/rules/capability-registry.md's example fence for "
+                f"'{backend}' documents key(s) {sorted(extra_in_doc)} not "
+                f"present in config/capability_registry.yaml -- stale entry, "
+                f"remove it from the doc"
+            )
+
+
+def check_howto_capability_table_matches_registry(errors: list[str]) -> None:
+    """cli.py's generated HOWTO.md ships a 'Full capability-passthrough key
+    reference' table describing every whitelisted capability key to every
+    scaffolded project -- it must list every key in
+    config/capability_registry.yaml (both backends combined), or a
+    scaffolded project's own docs undersell what's actually available."""
+    if not CLI_PY.exists():
+        errors.append(f"missing file: {CLI_PY}")
+        return
+
+    root_cfg = _load_yaml(ROOT_CONFIG / "capability_registry.yaml")
+    registry_keys: set[str] = set()
+    for backend_cfg in root_cfg.values():
+        registry_keys |= set(backend_cfg.get("allowed", []))
+
+    text = CLI_PY.read_text()
+    table_match = re.search(
+        r"Full capability-passthrough key reference.*?\n\n(.*?)\n\n", text, re.DOTALL
+    )
+    if not table_match:
+        errors.append(
+            f"{CLI_PY}: could not locate the 'Full capability-passthrough "
+            f"key reference' table to check it against config/capability_registry.yaml"
+        )
+        return
+
+    table_text = table_match.group(1)
+    documented_keys = set(re.findall(r"\|\s*`([a-zA-Z_]+)`\s*\|", table_text))
+    missing_from_table = registry_keys - documented_keys
+    if missing_from_table:
+        errors.append(
+            f"{CLI_PY}'s 'Full capability-passthrough key reference' table "
+            f"is missing key(s) {sorted(missing_from_table)} present in "
+            f"config/capability_registry.yaml -- add a row for each"
+        )
+
+
 def check_guardrails_yaml_exists(errors: list[str]) -> None:
     scaffold_guardrails = SCAFFOLD_CONFIG / "guardrails.yaml"
     if not scaffold_guardrails.exists():
@@ -126,6 +211,8 @@ def main() -> int:
     errors: list[str] = []
     check_exact_pairs(errors)
     check_capability_registry_structure(errors)
+    check_capability_rule_doc_matches_registry(errors)
+    check_howto_capability_table_matches_registry(errors)
     check_guardrails_yaml_exists(errors)
     check_examples_referenced(errors)
 

@@ -10,11 +10,18 @@ Whitelist of `config/process_registry.yaml` step capability keys (see
 `.claude/rules/process-registry.md`'s "capability passthrough" rule),
 per backend. Structure:
 
+`mcp_servers`/`allowed_tools`/`guardrails`/`skills` are also whitelisted
+here but documented in full in `.claude/rules/mcp-scope.md` (the first
+three) and `.claude/rules/guardrails-registry.md` (`guardrails`) --
+`mcp_servers`/`allowed_tools`/`guardrails` are popped off and consumed as
+hooks rather than forwarded to `ClaudeAgentOptions`/`messages.create()`
+directly; only `skills` is a real passthrough field on both backends.
+
 ```yaml
 agent_sdk:
-  allowed: [max_turns, thinking, max_thinking_tokens, effort, permission_mode, fallback_model]
+  allowed: [max_turns, thinking, max_thinking_tokens, effort, permission_mode, fallback_model, mcp_servers, allowed_tools, guardrails, skills]
 messages_api:
-  allowed: [temperature, top_p, max_tokens, thinking, stop_sequences]
+  allowed: [temperature, top_p, max_tokens, thinking, stop_sequences, skills]
 ```
 
 Rules:
