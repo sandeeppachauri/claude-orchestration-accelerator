@@ -151,6 +151,47 @@ def test_execute_full_process_runs_all_steps_in_registry_order(monkeypatch):
     assert list(result.keys()) == ["classify", "extract", "respond"]
 
 
+def test_execute_multi_field_dict_input_survives_across_steps(monkeypatch):
+    """templatingDemo-style regression: `escalate` needs the same named
+    dossier fields `triage` used, plus `triage_output` -- collapsing
+    input_data into a single `input` key would strand those fields."""
+    _patch_logging(monkeypatch)
+
+    seen_user_content = []
+    responses = ["escalate to billing team", '{"escalate": true, "urgency": "high", "reason": "gold tier, SLA breach imminent"}']
+
+    async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
+        seen_user_content.append(user_content)
+        return responses[len(seen_user_content) - 1]
+
+    monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
+
+    execute(
+        {
+            "process": "templatingDemo",
+            "input": {
+                "ticket_id": "T-1",
+                "customer_name": "Ada",
+                "customer_tier": "gold",
+                "body": "My invoice is wrong",
+                "account_history": "3 prior tickets, no refunds issued",
+                "sla_minutes_remaining": 45,
+            },
+            "backend": "agent_sdk",
+        }
+    )
+
+    # escalate step's rendered user turn must still contain every original
+    # dossier field, not just "input" + "triage_output".
+    escalate_user_content = seen_user_content[1]
+    assert "T-1" in escalate_user_content
+    assert "Ada" in escalate_user_content
+    assert "gold" in escalate_user_content
+    assert "My invoice is wrong" in escalate_user_content
+    assert "3 prior tickets, no refunds issued" in escalate_user_content
+    assert "45" in escalate_user_content
+
+
 def test_execute_full_process_threads_prior_step_outputs(monkeypatch):
     _patch_logging(monkeypatch)
 

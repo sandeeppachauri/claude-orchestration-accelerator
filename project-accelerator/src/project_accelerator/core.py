@@ -339,7 +339,14 @@ async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
         if results and prompt_file is not None:
             pm = PromptManager(prompts_dir=prompts_dir)
             if pm.has_placeholders(step_name, filename=prompt_file):
-                step_input = {"input": input_data}
+                # A dict input_data (templatingDemo-style, multi-field
+                # placeholders) keeps its original named fields untouched --
+                # collapsing them into a single "input" key would strand a
+                # later step that also needs those original fields (e.g.
+                # `escalate` needing the same dossier fields `triage` used).
+                step_input = (
+                    dict(input_data) if isinstance(input_data, dict) else {"input": input_data}
+                )
                 step_input.update({f"{name}_output": out for name, out in results.items()})
 
         results[step_name] = await _run_one_step(
