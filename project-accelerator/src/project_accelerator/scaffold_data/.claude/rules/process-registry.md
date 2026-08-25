@@ -86,3 +86,38 @@ See `prompts/classify.yaml` (no placeholders), `prompts/ticket_triage.yaml`
 and `user_prompt`, paired with `templatingDemo.escalate` below for a full
 capability-key reference) for worked examples, wired up under the
 `templatingDemo` process in this file.
+
+## Threading a prior step's output: `{{<stepName>_output}}`
+
+Every step's raw result gets fed back into the step loop, and any step
+that runs *after* it can pull it in as a placeholder named
+`<stepName>_output` -- e.g. the `triage` step's result is exposed to
+later steps as `{{triage_output}}`, `classify`'s as `{{classify_output}}`,
+etc. This name is not declared anywhere in `<stepName>`'s own prompt YAML
+-- it is generated mechanically by `core.py`'s step loop from that step's
+key in `steps: [...]` (`f"{step_name}_output"`), so the convention to
+remember is: **to consume step X's output, write `{{X_output}}`** in a
+*later* step's prompt, matching X's exact name from `steps:` above.
+
+- Only reaches a step that already takes the dict/placeholder input path
+  (i.e. its prompt has at least one `{{key}}` somewhere) -- a step with a
+  fully static prompt (no placeholders at all) still gets the legacy
+  plain-string `input` untouched, per the rule above.
+- If `input_data` itself is a dict (`templatingDemo`-style, multiple
+  named fields), those original fields are preserved as-is and
+  `<stepName>_output` keys are added alongside them -- a later step can
+  reference both its own named fields and any prior step's output in the
+  same prompt.
+- First step in a process never has a `<stepName>_output` available (no
+  prior step ran yet) -- only steps after it do.
+- Declaring `{{<stepName>_output}}` in a prompt makes that placeholder
+  **required** by `PromptManager.render()`'s strict-match check -- if you
+  run that step standalone (`payload["step"]` narrowed to just that one
+  step, no earlier step in the same call), you must supply
+  `<stepName>_output` explicitly in `input` yourself, since no earlier
+  step actually ran to produce it.
+
+See `prompts/extract_v2.yaml` (`{{classify_output}}`),
+`prompts/classify_soa.yaml` (`{{classify_output}}` + `{{extract_output}}`),
+and `prompts/escalation_decision.yaml` (`{{triage_output}}`) for worked
+examples of this convention.

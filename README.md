@@ -111,6 +111,16 @@ table above on one step) for three worked examples, simplest to most
 complex. `project-accelerator`'s generated `HOWTO.md` walks through all
 three end to end for a scaffolded project.
 
+A later step can also pull in an earlier step's raw result, via a
+placeholder named `{{<stepName>_output}}` -- e.g. `{{triage_output}}` for
+`triage`'s result, `{{classify_output}}` for `classify`'s. This name
+isn't declared in the earlier step's own prompt YAML; it's generated
+mechanically from that step's key in `steps: [...]`. See
+`.claude/rules/process-registry.md`'s "Threading a prior step's output"
+section for the full rules (only reaches placeholder-taking steps,
+required once declared, must be supplied by hand when running that step
+standalone).
+
 ## File upload and batch processing
 
 Alongside `execute()`'s text path, two additional entry points follow the

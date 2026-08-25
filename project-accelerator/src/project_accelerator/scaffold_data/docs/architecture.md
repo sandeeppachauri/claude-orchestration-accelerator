@@ -16,6 +16,12 @@ This project runs on the `claude-project-accelerator` stack:
    per-call capability flags) lives here and nowhere else.
 3. `prompts/*.yaml` holds the prompt templates the registry points at,
    including `{{key}}` placeholders rendered from `execute()`'s `input`.
+   A later step can also reference an earlier step's result via
+   `{{<stepName>_output}}` (e.g. `{{classify_output}}`) -- this name is
+   generated mechanically from the step's key in `steps: [...]`, not
+   declared in that step's own prompt YAML. See
+   `.claude/rules/process-registry.md`'s "Threading a prior step's
+   output" section.
 4. Auth resolution (`claude-auth-accelerator`) and tracing
    (`ClaudeSDKLoggerAccelerator`) are wired in automatically -- nothing
    to configure to get logging or credential resolution working.
