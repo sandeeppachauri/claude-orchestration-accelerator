@@ -1,0 +1,17 @@
+# config/guardrails.yaml
+#
+# Named guardrail instances, unrelated to MCP access (see mcp_servers/
+# allowed_tools on process_registry.yaml steps for that -- .claude/rules/
+# mcp-scope.md). Each entry's `type` must be registered in
+# orchestration_accelerator/guardrails.py's GUARDRAIL_TYPES. `params` tunes
+# an existing type without any code change. See
+# .claude/rules/guardrails-registry.md.
+#
+# Commented out -- inactive by default on a freshly scaffolded project.
+# Uncomment and reference by name via a step's `guardrails: [...]` key to
+# opt in.
+
+# redactPII:
+#   type: redaction
+#   params:
+#     patterns: ["\\b\\d{3}-\\d{2}-\\d{4}\\b"]   # SSN-shaped strings

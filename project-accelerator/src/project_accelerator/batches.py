@@ -19,7 +19,7 @@ __all__ = ["execute_batch"]
 
 
 def _resolve_registry_path() -> Path | None:
-    cwd_registry = Path.cwd() / "process_registry.yaml"
+    cwd_registry = Path.cwd() / "config" / "process_registry.yaml"
     if cwd_registry.exists():
         return cwd_registry
     return None

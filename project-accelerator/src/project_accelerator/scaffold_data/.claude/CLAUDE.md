@@ -42,27 +42,33 @@ result = execute({
 
 Nothing about which process/step/model/backend runs is hardcoded anywhere
 in this path — it is entirely driven by the payload and by
-`process_registry.yaml`.
+`config/process_registry.yaml`.
 
 ## Configuration
 
-- `process_registry.yaml` is the single source of truth for a process's
+- `config/process_registry.yaml` is the single source of truth for a process's
   step order and per-step `{prompt, model, fallback}` configuration. This
   is the *only* place step flow is controlled — a payload can select a
   process and, optionally, narrow to one step, but it can never reorder,
   skip, or subset a process's `steps` list. Every step capability key
   (anything besides `prompt`/`model`/`fallback`/`system_prompt`) is
-  checked against `capability_registry.yaml`'s per-backend whitelist
+  checked against `config/capability_registry.yaml`'s per-backend whitelist
   before the model call.
-- `capability_registry.yaml` is the whitelist of capability keys allowed
+- `config/capability_registry.yaml` is the whitelist of capability keys allowed
   per backend (`agent_sdk` / `messages_api`) — not environment-specific
   (unlike `.env`): the same keys must be valid on every environment a
   backend runs in.
 - `.env` carries `ENVIRONMENT` (default resolved environment) and
   `DEFAULT_MODEL` (used by the built-in default configuration fallback
-  when a `(process, step)` isn't defined in `process_registry.yaml`).
+  when a `(process, step)` isn't defined in `config/process_registry.yaml`).
 - `logger_config.json` configures the default logging wrapper (all 8
   scopes enabled by default).
+- A step may also set `mcp_servers`/`allowed_tools` (MCP access scoping)
+  and `skills` (native per-skill restriction) — see
+  `.claude/rules/mcp-scope.md`. `config/guardrails.yaml` supplies named,
+  config-tunable guardrail instances a step opts into via a `guardrails`
+  key — see `.claude/rules/guardrails-registry.md`. All three are
+  optional per step and fail-open when omitted.
 
 ## Running tests
 

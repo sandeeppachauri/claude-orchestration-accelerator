@@ -165,7 +165,7 @@ for the full field-by-field schema of each.
 
 ## Sub-projects
 
-- [`claude-orchestration-accelerator`](./README_package.md) (this repo
+- [`claude-orchestration-accelerator`](./docs/README_package.md) (this repo
   root as a Python package) — prompt resolution (`prompting/`) and the
   process registry (`registry/`), plus a default logging wrapper
   (`logging/`). See [`src/orchestration_accelerator/README.md`](./src/orchestration_accelerator/README.md)

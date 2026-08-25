@@ -1,12 +1,12 @@
 ---
 description: Schema guidance for capability_registry.yaml
 paths:
-  - "**/capability_registry.yaml"
+  - "**/config/capability_registry.yaml"
 ---
 
 # capability_registry.yaml schema
 
-Whitelist of `process_registry.yaml` step capability keys (see
+Whitelist of `config/process_registry.yaml` step capability keys (see
 `.claude/rules/process-registry.md`'s "capability passthrough" rule),
 per backend. Structure:
 
@@ -39,7 +39,7 @@ Rules:
 - This file is deliberately **not** environment-specific, unlike
   `.env` -- the same keys must be valid on every environment a given
   backend runs in, so it lives at the same tier as
-  `process_registry.yaml`, not `.env`. Putting an allowlist in `.env`
+  `config/process_registry.yaml`, not `.env`. Putting an allowlist in `.env`
   would let one environment silently accept a key another rejects.
 - To add a new capability once its backend actually supports it (e.g. a
   `claude-agent-sdk`/`anthropic` SDK bump adds a new
@@ -56,8 +56,8 @@ Rules:
   against that backend fails validation, rather than being silently
   permitted.
 
-See `capability_registry.yaml` (repo root) for the shipped defaults, and
-`process_registry.yaml`'s `templatingDemo.escalate` step for a worked
+See `config/capability_registry.yaml` (repo root) for the shipped defaults, and
+`config/process_registry.yaml`'s `templatingDemo.escalate` step for a worked
 example of a step whose live capability keys are agent_sdk-only
 (matching the backend `examples/sample_usage.py` actually calls it
 with), with the messages_api-only equivalents left as a comment.

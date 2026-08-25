@@ -84,7 +84,12 @@ def _prompts_dir_for_registry(registry_path: Path | str | None) -> Path:
         from orchestration_accelerator.prompting import PROMPTS_DIR
 
         return PROMPTS_DIR
-    return Path(registry_path).parent / "prompts"
+    registry_dir = Path(registry_path).parent
+    # process_registry.yaml lives under config/, prompts/ stays a sibling
+    # of config/ at the project root -- not a sibling of the registry file
+    # itself.
+    project_root = registry_dir.parent if registry_dir.name == "config" else registry_dir
+    return project_root / "prompts"
 
 
 def _submit_with_fallback(

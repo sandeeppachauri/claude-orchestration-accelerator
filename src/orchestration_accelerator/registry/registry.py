@@ -27,13 +27,15 @@ import yaml
 # Ships at the orchestration_accelerator package root -- also the default
 # file every scaffolded project starts with (claude-project-accelerator's
 # scaffold command copies this same file).
-DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parents[3] / "process_registry.yaml"
+DEFAULT_REGISTRY_PATH = (
+    Path(__file__).resolve().parents[3] / "config" / "process_registry.yaml"
+)
 
 # Same tier/shipping story as DEFAULT_REGISTRY_PATH above -- see
 # capability_registry.yaml's own header comment for why this lives here
 # rather than in .env.
 DEFAULT_CAPABILITY_REGISTRY_PATH = (
-    Path(__file__).resolve().parents[3] / "capability_registry.yaml"
+    Path(__file__).resolve().parents[3] / "config" / "capability_registry.yaml"
 )
 
 _RESERVED_KEYS = {"id", "description", "steps"}

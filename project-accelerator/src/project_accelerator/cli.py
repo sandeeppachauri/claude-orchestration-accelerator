@@ -30,7 +30,10 @@ ORCHESTRATION_GIT_URL = "https://github.com/sandeeppachauri/claude-orchestration
 ACCELERATORS_GIT_URL = "https://github.com/sandeeppachauri/Accelerators.git"
 
 SKELETON_ENTRIES = [
-    "CLAUDE.md",
+    # CLAUDE.md ships inside .claude/ (below) -- both ./CLAUDE.md and
+    # ./.claude/CLAUDE.md are supported by Claude Code; this repo uses the
+    # latter. CLAUDE.local.md has no .claude/ variant, so it stays its own
+    # top-level entry.
     "CLAUDE.local.md",
     ".claude",
     ".mcp.json",
@@ -61,9 +64,12 @@ def _copy_reference_skeleton(dest: Path) -> None:
 
 def _copy_sample_config(dest: Path) -> None:
     data_dir = _scaffold_data_dir()
-    shutil.copy2(data_dir / "process_registry.yaml", dest / "process_registry.yaml")
-    shutil.copy2(data_dir / "batch_registry.yaml", dest / "batch_registry.yaml")
-    shutil.copy2(data_dir / "capability_registry.yaml", dest / "capability_registry.yaml")
+    config_dest = dest / "config"
+    config_dest.mkdir(exist_ok=True)
+    shutil.copy2(data_dir / "config" / "process_registry.yaml", config_dest / "process_registry.yaml")
+    shutil.copy2(data_dir / "config" / "batch_registry.yaml", config_dest / "batch_registry.yaml")
+    shutil.copy2(data_dir / "config" / "capability_registry.yaml", config_dest / "capability_registry.yaml")
+    shutil.copy2(data_dir / "config" / "guardrails.yaml", config_dest / "guardrails.yaml")
     prompts_dest = dest / "prompts"
     prompts_dest.mkdir(exist_ok=True)
     for prompt_file in (data_dir / "prompts").glob("*.yaml"):
@@ -97,16 +103,16 @@ Scaffolded by `cpa new --project-name {project_name}` from
 
 ## Structure
 
-- `process_registry.yaml` -- single source of truth for each process's step
+- `config/process_registry.yaml` -- single source of truth for each process's step
   order and per-step `{{prompt, model, fallback}}` configuration.
-- `capability_registry.yaml` -- whitelist of capability keys (e.g.
+- `config/capability_registry.yaml` -- whitelist of capability keys (e.g.
   `max_turns`, `temperature`) allowed per backend; a step's capability
   keys are checked against this before the model call.
 - `prompts/*.yaml` -- prompt templates referenced by the registry.
 - `pipeline/run_pipeline.py` -- sample script driving `execute()`.
 - `examples/sample_usage.py` -- sample `TicketClassifier` class wrapping
-  `execute()` the way SETUP.md step 11 shows it used directly.
-- `batch_registry.yaml` -- maps a `batch_id` to a `process_registry.yaml`
+  `execute()` the way docs/SETUP.md step 11 shows it used directly.
+- `config/batch_registry.yaml` -- maps a `batch_id` to a `config/process_registry.yaml`
   process for batch jobs (see "File upload and batch processing" below).
 - `examples/file_upload_example.py` / `examples/batch_processing_example.py`
   -- sample classes for `upload_file()` and `execute_batch()`.
@@ -119,7 +125,7 @@ Three sample processes ship out of the box: `ticketClassification`
 (`classify` -> `extract` -> `respond`), `onboarding` (`welcome` ->
 `verify` -> `finalize`), and `templatingDemo` (`triage` -> `escalate`,
 demonstrating runtime `{{key}}` placeholders -- see "Runtime input" below).
-Edit `process_registry.yaml` and `prompts/*.yaml` to add your own, or
+Edit `config/process_registry.yaml` and `prompts/*.yaml` to add your own, or
 remove the samples once you've replaced them.
 
 ## Run
@@ -128,14 +134,14 @@ remove the samples once you've replaced them.
 from project_accelerator import execute
 
 result = execute({{
-    "process": "ticketClassification",  # any process defined in process_registry.yaml
+    "process": "ticketClassification",  # any process defined in config/process_registry.yaml
     "input": "some ticket text",
     "backend": "agent_sdk",             # "agent_sdk" | "messages_api"
 }})
 ```
 
 The payload's `"process"` (and optional `"step"`) select what to run;
-`process_registry.yaml` alone controls step order and per-step config --
+`config/process_registry.yaml` alone controls step order and per-step config --
 the payload can never reorder, skip, or subset a process's `steps` list.
 
 ## Environment configuration
@@ -207,7 +213,7 @@ never a silently blank or ignored value). Three worked examples ship in
    (`templatingDemo.triage`).
 3. `escalation_decision.yaml` -- placeholders in *both* `system_prompt`
    and `user_prompt`, paired with a full capability-key spread in
-   `process_registry.yaml`'s `templatingDemo.escalate` step.
+   `config/process_registry.yaml`'s `templatingDemo.escalate` step.
 
 See `HOWTO.md` for a full walkthrough and runnable snippets.
 
@@ -219,7 +225,7 @@ from project_accelerator import upload_file, execute_batch
 file_id = upload_file("invoice.pdf", backend="messages_api")
 
 result = execute_batch({{
-    "batch_id": "ticketClassificationBatch_01",  # see batch_registry.yaml
+    "batch_id": "ticketClassificationBatch_01",  # see config/batch_registry.yaml
     "inputs": ["ticket text 1", "ticket text 2"],
 }})
 ```
@@ -228,22 +234,22 @@ result = execute_batch({{
 returns a local path reference (`agent_sdk`). `execute_batch()` submits
 every item in `"inputs"` as one real Anthropic Message Batches API job
 (not a loop over `execute()`), polls until done, then validates each
-result the same way `execute()` does. `batch_registry.yaml` maps a
-`batch_id` to a `process_registry.yaml` process `id` (+ optional `step`)
+result the same way `execute()` does. `config/batch_registry.yaml` maps a
+`batch_id` to a `config/process_registry.yaml` process `id` (+ optional `step`)
 -- see `.claude/rules/batch-registry.md` for the schema. Runnable
 examples: `examples/file_upload_example.py`,
 `examples/batch_processing_example.py`.
 
-### `process_registry.yaml` vs `batch_registry.yaml` -- what goes where
+### `config/process_registry.yaml` vs `config/batch_registry.yaml` -- what goes where
 
-| | `process_registry.yaml` | `batch_registry.yaml` |
+| | `config/process_registry.yaml` | `config/batch_registry.yaml` |
 | --- | --- | --- |
 | Owns | model invocation layer: step order, `prompt`, `model`, `fallback`, capability passthrough | batch-run mechanics only: `batch_id`, `process`/`step` reference, `environment`, `poll_interval_seconds`, `poll_timeout_seconds` |
 | Model/prompt info | yes -- the only place it lives | no -- always resolved via the `process`/`step` it points at |
 
 A batch entry never duplicates model config -- `execute_batch()` always
 reads `prompt`/`model`/`fallback`/capabilities from the
-`process_registry.yaml` step the batch's `process` (+ optional `step`)
+`config/process_registry.yaml` step the batch's `process` (+ optional `step`)
 reference resolves to.
 
 ## Tests
@@ -276,12 +282,12 @@ a running pipeline.
 3. Run the smoke test: `pytest tests/test_sample_pipeline.py`.
 4. Run the sample pipeline end to end:
    `python pipeline/run_pipeline.py ticketClassification "sample ticket text"`.
-5. Open `process_registry.yaml` and `prompts/*.yaml` and start replacing
+5. Open `config/process_registry.yaml` and `prompts/*.yaml` and start replacing
    the sample `ticketClassification`/`onboarding` processes with your own.
 
 ## File-by-file
 
-- **`process_registry.yaml`** -- the single source of truth for every
+- **`config/process_registry.yaml`** -- the single source of truth for every
   process's step order and per-step `{{prompt, model, fallback}}` config.
   It's here because nothing about which steps run, in what order, or with
   which model is allowed to be hardcoded in application code -- a payload
@@ -345,11 +351,11 @@ Three shipped examples, simplest to most complex:
 3. **Complex -- `prompts/escalation_decision.yaml`** (`templatingDemo.escalate`).
    Placeholders in *both* `system_prompt` (changes persona per
    `{{customer_tier}}`) and `user_prompt` (a 6-field case dossier), paired
-   with a capability-key spread on the step in `process_registry.yaml`:
+   with a capability-key spread on the step in `config/process_registry.yaml`:
    `max_turns`, `permission_mode`, `thinking` -- all `agent_sdk` keys,
    since this step is called with `backend="agent_sdk"` below. A
    backend's capability keys are validated against
-   `capability_registry.yaml`'s whitelist for that backend before the
+   `config/capability_registry.yaml`'s whitelist for that backend before the
    call happens; `messages_api`-only keys (`temperature`, `top_p`,
    `max_tokens`) would fail that check here, since the two backends'
    allowed sets are disjoint, not a shared superset.
@@ -370,7 +376,7 @@ Three shipped examples, simplest to most complex:
 
 Full capability-passthrough key reference (any step key besides
 `prompt`/`model`/`fallback`/`system_prompt` flows straight through to the
-model call, after passing `capability_registry.yaml`'s per-backend
+model call, after passing `config/capability_registry.yaml`'s per-backend
 whitelist -- see `.claude/rules/process-registry.md` and
 `.claude/rules/capability-registry.md`):
 
@@ -395,7 +401,7 @@ whitelist.
 - **`.env`** -- `ENVIRONMENT` (the default environment `execute()` resolves
   auth for when a payload doesn't specify one) and `DEFAULT_MODEL` (the
   model used for any `(process, step)` not explicitly listed in
-  `process_registry.yaml`). Exists so environment/default-model changes
+  `config/process_registry.yaml`). Exists so environment/default-model changes
   don't require touching code.
 
 ### Environment configuration across `local` / `staging` / `prod`
@@ -438,7 +444,7 @@ call, relying on the payload -> `.env` -> `"local"` fallback.
 
 - **`pipeline/run_pipeline.py`** -- a runnable script that reads a process
   name and input off `sys.argv` and calls `execute()` with no `"step"` key,
-  so every step in `process_registry.yaml`'s order runs. It's the
+  so every step in `config/process_registry.yaml`'s order runs. It's the
   fastest way to exercise a whole process from the command line:
   `python pipeline/run_pipeline.py <process> "<input text>"`.
 
@@ -448,8 +454,8 @@ call, relying on the payload -> `.env` -> `"local"` fallback.
   keys. Copy this pattern when you need to call a process from your own
   application code.
 
-- **`batch_registry.yaml`** -- maps a `batch_id` to a
-  `process_registry.yaml` process `id` (+ optional `step`), plus
+- **`config/batch_registry.yaml`** -- maps a `batch_id` to a
+  `config/process_registry.yaml` process `id` (+ optional `step`), plus
   batch-specific `poll_interval_seconds`/`poll_timeout_seconds`. See
   `.claude/rules/batch-registry.md` for the full schema. `execute_batch()`
   reads this to know which process/step/model runs across every item in
@@ -462,7 +468,7 @@ call, relying on the payload -> `.env` -> `"local"` fallback.
 - **`examples/batch_processing_example.py`** -- a `BatchTicketClassifier`
   class showing `project_accelerator.execute_batch()` used directly,
   wired to the `ticketClassificationBatch_01` entry in
-  `batch_registry.yaml`.
+  `config/batch_registry.yaml`.
 
 - **`tests/test_sample_pipeline.py`** -- a smoke test for the sample
   process that mocks the model call, so it runs without any credential.
@@ -472,8 +478,8 @@ call, relying on the payload -> `.env` -> `"local"` fallback.
   minimal run/test commands. This file (`HOWTO.md`) is the longer,
   file-by-file version.
 
-- **`CLAUDE.md` / `CLAUDE.local.md` / `.claude/`** -- the reference Claude
-  Code project skeleton (settings, hooks, skills, agents, rules,
+- **`.claude/CLAUDE.md` / `CLAUDE.local.md` / `.claude/`** -- the reference
+  Claude Code project skeleton (settings, hooks, skills, agents, rules,
   commands), copied as a one-time snapshot so this project has the same
   Claude Code conventions as `claude-orchestration-accelerator` itself.
 
@@ -508,7 +514,7 @@ def _write_pipeline_runner(dest: Path) -> None:
         '''"""
 run_pipeline.py
 
-Reads the step list and per-step config from process_registry.yaml --
+Reads the step list and per-step config from config/process_registry.yaml --
 nothing here is a hardcoded tuple or dict. Run: python pipeline/run_pipeline.py
 
 Logging is on by default -- no setup needed. execute() logs every turn
@@ -524,7 +530,7 @@ from project_accelerator import execute
 
 
 def run(process_name: str, input_text: str, backend: str = "agent_sdk") -> dict:
-    """Runs every step of `process_name` in the order process_registry.yaml
+    """Runs every step of `process_name` in the order config/process_registry.yaml
     defines, by simply not passing payload["step"] -- execute() reads the
     step order from the registry itself."""
     return execute({
@@ -560,7 +566,7 @@ def _write_sample_usage(dest: Path) -> None:
         '''"""
 sample_usage.py
 
-Two worked examples of the library entry point, as shown in SETUP.md
+Two worked examples of the library entry point, as shown in docs/SETUP.md
 step 11 ("Using the library entry point directly"). Needs a real
 credential (ANTHROPIC_API_KEY env var or an ambient `claude login` OAuth
 session) to actually call a model. Run: python examples/sample_usage.py
@@ -651,7 +657,7 @@ class TicketEscalator:
         return execute({
             "process": "templatingDemo",
             # no "step" -- runs triage then escalate, in the order
-            # process_registry.yaml's `steps` list declares.
+            # config/process_registry.yaml's `steps` list declares.
             "input": {
                 "ticket_id": ticket_id,
                 "customer_name": customer_name,
@@ -763,7 +769,7 @@ batch_processing_example.py
 
 Sample class wrapping project_accelerator.execute_batch() -- submits a
 list of inputs as a single Anthropic Message Batches API job (see
-batch_registry.yaml and .claude/rules/batch-registry.md), not a loop
+config/batch_registry.yaml and .claude/rules/batch-registry.md), not a loop
 over execute(). Needs a real credential to actually submit a batch.
 Run: python examples/batch_processing_example.py
 """
@@ -773,7 +779,7 @@ from project_accelerator import execute_batch
 
 class BatchTicketClassifier:
     """Classifies many tickets in one batch job, wired to the
-    ticketClassificationBatch entry in batch_registry.yaml."""
+    ticketClassificationBatch entry in config/batch_registry.yaml."""
 
     def __init__(self, batch_id: str = "ticketClassificationBatch_01") -> None:
         self.batch_id = batch_id
@@ -1027,11 +1033,11 @@ def cmd_new(args: argparse.Namespace) -> None:
 
     print(f"\nScaffolded project '{args.project_name}' at {dest}")
     print("Created:")
-    print("  prompts/*.yaml, process_registry.yaml, capability_registry.yaml, batch_registry.yaml, .env, logger_config.json")
+    print("  prompts/*.yaml, config/process_registry.yaml, config/capability_registry.yaml, config/batch_registry.yaml, config/guardrails.yaml, .env, logger_config.json")
     print("  pipeline/run_pipeline.py, examples/sample_usage.py, tests/test_sample_pipeline.py")
     print("  examples/file_upload_example.py, examples/batch_processing_example.py")
     print("  README.md, HOWTO.md")
-    print("  CLAUDE.md, CLAUDE.local.md, .claude/ (reference skeleton)")
+    print("  CLAUDE.local.md, .claude/ (reference skeleton, incl. .claude/CLAUDE.md)")
     print("  .mcp.json, docs/architecture.md, scripts/smoke_test.sh")
 
 

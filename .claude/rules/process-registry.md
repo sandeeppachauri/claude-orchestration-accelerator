@@ -1,7 +1,7 @@
 ---
 description: Schema guidance for process_registry.yaml
 paths:
-  - "**/process_registry.yaml"
+  - "**/config/process_registry.yaml"
 ---
 
 # process_registry.yaml schema
@@ -45,7 +45,7 @@ Rules:
   `max_turns`, `thinking`/extended-thinking, `temperature`, `top_p`,
   `permission_mode`, etc. per step, entirely from this file — no
   accelerator code change needed. Every capability key is checked
-  against `capability_registry.yaml`'s per-backend whitelist before the
+  against `config/capability_registry.yaml`'s per-backend whitelist before the
   model call — a key not whitelisted for the step's backend raises
   `UnsupportedCapabilityError` immediately, not a `TypeError` several
   layers deep inside the SDK/API client. See

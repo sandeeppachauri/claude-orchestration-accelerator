@@ -30,6 +30,17 @@ agent_sdk:
     - effort
     - permission_mode
     - fallback_model
+    # MCP access scoping (see .claude/rules/mcp-scope.md) -- popped off
+    # by call_agent_sdk() and consumed as hooks, never forwarded to
+    # ClaudeAgentOptions directly.
+    - mcp_servers
+    - allowed_tools
+    # Guardrail instance names (see .claude/rules/guardrails-registry.md)
+    # -- same pop-and-hook handling as mcp_servers/allowed_tools above.
+    - guardrails
+    # Native ClaudeAgentOptions.skills passthrough -- unlike the three
+    # keys above, this one IS a real field and flows straight through.
+    - skills
 
 messages_api:
   # Keyword arguments anthropic.Client.messages.create() accepts that are
@@ -40,3 +51,7 @@ messages_api:
     - max_tokens
     - thinking
     - stop_sequences
+    # Translated by call_messages_api() into the beta client's
+    # container.skills shape -- see .claude/rules/mcp-scope.md's sibling
+    # skills note.
+    - skills

@@ -42,11 +42,11 @@ result = execute({
 
 Nothing about which process/step/model/backend runs is hardcoded anywhere
 in this path — it is entirely driven by the payload and by
-`process_registry.yaml`.
+`config/process_registry.yaml`.
 
 ## Configuration
 
-- `process_registry.yaml` is the single source of truth for a process's
+- `config/process_registry.yaml` is the single source of truth for a process's
   step order and per-step `{prompt, model, fallback}` configuration. This
   is the *only* place step flow is controlled — a payload can select a
   process and, optionally, narrow to one step, but it can never reorder,
@@ -55,19 +55,25 @@ in this path — it is entirely driven by the payload and by
   is a capability passthrough — it flows untouched through `core.py` ->
   `execute_with_fallback()` -> the chosen backend's model call, so
   per-step model behavior is tunable from config alone. Every capability
-  key is checked against `capability_registry.yaml`'s per-backend
+  key is checked against `config/capability_registry.yaml`'s per-backend
   whitelist first — an unlisted key raises `UnsupportedCapabilityError`
   before the model call, not a `TypeError` deep inside the SDK.
-- `capability_registry.yaml` is the whitelist of capability keys allowed
+- `config/capability_registry.yaml` is the whitelist of capability keys allowed
   per backend (`agent_sdk` / `messages_api`) — see
   `.claude/rules/capability-registry.md`. Not environment-specific
   (unlike `.env`): the same keys must be valid on every environment a
   backend runs in.
 - `.env` carries `ENVIRONMENT` (default resolved environment) and
   `DEFAULT_MODEL` (used by the built-in default configuration fallback
-  when a `(process, step)` isn't defined in `process_registry.yaml`).
+  when a `(process, step)` isn't defined in `config/process_registry.yaml`).
 - `logger_config.json` configures the default logging wrapper (all 8
   scopes enabled by default).
+- A step may also set `mcp_servers`/`allowed_tools` (MCP access scoping)
+  and `skills` (native per-skill restriction) — see
+  `.claude/rules/mcp-scope.md`. `config/guardrails.yaml` supplies named,
+  config-tunable guardrail instances a step opts into via a `guardrails`
+  key — see `.claude/rules/guardrails-registry.md`. All three are
+  optional per step and fail-open when omitted.
 
 ## Running tests
 
@@ -77,3 +83,14 @@ pytest tests/test_sample_pipeline.py
 
 See each sub-project's own README (`claude-orchestration-accelerator`,
 `model-router/`, `project-accelerator/`) for install/usage detail.
+
+## Keeping the scaffold in sync
+
+`project-accelerator/src/project_accelerator/scaffold_data/` is what
+`cpa new` ships to every scaffolded project — it must always match this
+repo's own `config/` schemas, rule docs, and worked example
+(`templatingDemo`, `dummyDemoSkill`). Run
+`python project-accelerator/scripts/check_scaffold_sync.py` to check;
+`sh project-accelerator/scripts/install-git-hooks.sh` (once per clone)
+installs a pre-commit hook that runs it automatically whenever a commit
+touches `config/*.yaml`, `.claude/rules/*.md`, or scaffold_data itself.

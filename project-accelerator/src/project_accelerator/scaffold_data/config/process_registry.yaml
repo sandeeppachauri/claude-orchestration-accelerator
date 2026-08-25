@@ -61,6 +61,24 @@ templatingDemo:
     #   temperature: 0.2
     #   top_p: 0.9
     #   max_tokens: 800
+    #
+    # MCP access scoping -- independent, opt-in mechanism (see
+    # .claude/rules/mcp-scope.md). Narrows which already-configured
+    # (.mcp.json / global settings) MCP servers/tools this step may
+    # reach; never grants a new server. Commented out -- inactive until a
+    # project author opts in:
+    # mcp_servers: [git]                     # server-level scoping
+    # allowed_tools: ["mcp__git__log"]       # finer, tool-level scoping
+    #
+    # Guardrails -- independent, opt-in mechanism, unrelated to MCP (see
+    # .claude/rules/guardrails-registry.md). Names resolve against
+    # config/guardrails.yaml. Commented out -- inactive until opted in:
+    # guardrails: [redactPII]
+    #
+    # Skills -- native ClaudeAgentOptions.skills passthrough (see the
+    # skills section of .claude/rules/mcp-scope.md). Commented out --
+    # inactive until opted in:
+    # skills: [dummyDemoSkill]
 
 onboarding:
   id: onboarding_01

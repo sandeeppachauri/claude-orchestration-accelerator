@@ -16,7 +16,9 @@ from typing import Any
 
 import yaml
 
-DEFAULT_BATCH_REGISTRY_PATH = Path(__file__).resolve().parents[3] / "batch_registry.yaml"
+DEFAULT_BATCH_REGISTRY_PATH = (
+    Path(__file__).resolve().parents[3] / "config" / "batch_registry.yaml"
+)
 
 _DEFAULT_POLL_INTERVAL_SECONDS = 5
 _DEFAULT_POLL_TIMEOUT_SECONDS = 3600

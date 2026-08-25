@@ -92,7 +92,7 @@ def _resolve_registry_and_prompts_dir() -> tuple[Path, Path]:
     """A scaffolded project has its own process_registry.yaml/prompts/ at
     its cwd; the accelerator repo itself (for its own dev/test use) falls
     back to orchestration_accelerator's shipped sample files."""
-    cwd_registry = Path.cwd() / "process_registry.yaml"
+    cwd_registry = Path.cwd() / "config" / "process_registry.yaml"
     cwd_prompts = Path.cwd() / "prompts"
     if cwd_registry.exists():
         return cwd_registry, cwd_prompts
@@ -106,7 +106,7 @@ def _resolve_registry_and_prompts_dir() -> tuple[Path, Path]:
 def _resolve_capability_registry_path() -> Path:
     """Same cwd-first-else-shipped-default resolution as
     _resolve_registry_and_prompts_dir(), for capability_registry.yaml."""
-    cwd_capabilities = Path.cwd() / "capability_registry.yaml"
+    cwd_capabilities = Path.cwd() / "config" / "capability_registry.yaml"
     if cwd_capabilities.exists():
         return cwd_capabilities
 
