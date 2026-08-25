@@ -215,7 +215,7 @@ never a silently blank or ignored value). Three worked examples ship in
    and `user_prompt`, paired with a full capability-key spread in
    `config/process_registry.yaml`'s `templatingDemo.escalate` step.
 
-See `HOWTO.md` for a full walkthrough and runnable snippets.
+See `docs/HOWTO.md` for a full walkthrough and runnable snippets.
 
 ## File upload and batch processing
 
@@ -258,13 +258,15 @@ reference resolves to.
 pytest tests/test_sample_pipeline.py
 ```
 
-See `HOWTO.md` for a file-by-file breakdown and getting-started steps.
+See `docs/HOWTO.md` for a file-by-file breakdown and getting-started steps.
 """
     )
 
 
 def _write_howto(dest: Path, project_name: str) -> None:
-    (dest / "HOWTO.md").write_text(
+    docs_dest = dest / "docs"
+    docs_dest.mkdir(exist_ok=True)
+    (docs_dest / "HOWTO.md").write_text(
         f"""# How to use {project_name}
 
 What each generated file is for, and how to get from a fresh checkout to
@@ -475,7 +477,7 @@ call, relying on the payload -> `.env` -> `"local"` fallback.
   Exists as a template for testing your own processes the same way.
 
 - **`README.md`** -- short orientation: what got scaffolded and the
-  minimal run/test commands. This file (`HOWTO.md`) is the longer,
+  minimal run/test commands. This file (`docs/HOWTO.md`) is the longer,
   file-by-file version.
 
 - **`.claude/CLAUDE.md` / `CLAUDE.local.md` / `.claude/`** -- the reference
@@ -1036,7 +1038,7 @@ def cmd_new(args: argparse.Namespace) -> None:
     print("  prompts/*.yaml, config/process_registry.yaml, config/capability_registry.yaml, config/batch_registry.yaml, config/guardrails.yaml, .env, logger_config.json")
     print("  pipeline/run_pipeline.py, examples/sample_usage.py, tests/test_sample_pipeline.py")
     print("  examples/file_upload_example.py, examples/batch_processing_example.py")
-    print("  README.md, HOWTO.md")
+    print("  README.md, docs/HOWTO.md")
     print("  CLAUDE.local.md, .claude/ (reference skeleton, incl. .claude/CLAUDE.md)")
     print("  .mcp.json, docs/architecture.md, scripts/smoke_test.sh")
 

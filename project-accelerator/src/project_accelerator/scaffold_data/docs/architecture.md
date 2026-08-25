@@ -61,5 +61,5 @@ flowchart LR
 resolves back into `process_registry.yaml` for prompt/model/fallback/
 capabilities, same as the text path.
 
-See `HOWTO.md` for a file-by-file breakdown and `README.md` for the
+See `docs/HOWTO.md` for a file-by-file breakdown and `README.md` for the
 quick-start commands.
