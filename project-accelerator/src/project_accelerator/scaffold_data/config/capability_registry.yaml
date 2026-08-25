@@ -30,6 +30,12 @@ agent_sdk:
     - effort
     - permission_mode
     - fallback_model
+    # Native ClaudeAgentOptions.tools passthrough -- the full built-in
+    # toolset (Read/Write/Edit/Bash/...) available to the model, distinct
+    # from mcp_servers/allowed_tools below (which only ever narrow MCP
+    # tool access). `tools: []` forces a tool-free, text-only turn.
+    - tools
+    - disallowed_tools
     # MCP access scoping (see .claude/rules/mcp-scope.md) -- popped off
     # by call_agent_sdk() and consumed as hooks, never forwarded to
     # ClaudeAgentOptions directly.

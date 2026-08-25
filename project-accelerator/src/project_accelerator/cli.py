@@ -390,6 +390,8 @@ whitelist -- see `.claude/rules/process-registry.md` and
 | `max_thinking_tokens` | `agent_sdk` | thinking token budget (alternate form) |
 | `effort` | `agent_sdk` | reasoning effort level |
 | `fallback_model` | `agent_sdk` | model to fall back to within one SDK call |
+| `tools` | `agent_sdk` | native `ClaudeAgentOptions.tools` -- the built-in toolset available; `[]` forces a tool-free, text-only turn |
+| `disallowed_tools` | `agent_sdk` | native `ClaudeAgentOptions.disallowed_tools` -- names to exclude from the built-in toolset |
 | `mcp_servers` | `agent_sdk` | narrow which `.mcp.json`/global-settings MCP servers a step may reach |
 | `allowed_tools` | `agent_sdk` | narrow to specific `mcp__server__tool` names (finer than `mcp_servers`) |
 | `guardrails` | `agent_sdk` | names resolved against `config/guardrails.yaml` (redaction, rate-limiting, ...) |

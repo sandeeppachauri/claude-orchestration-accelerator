@@ -68,14 +68,19 @@ def test_execute_single_step(monkeypatch):
 def test_execute_full_process_runs_all_steps_in_registry_order(monkeypatch):
     _patch_logging(monkeypatch)
 
-    seen_steps = []
+    calls = []
+    # Keyed by call order (classify, extract, respond) -- every step in
+    # this process is configured to the same claude-haiku-4-5-20251001
+    # model, so a model-keyed fixture couldn't tell the steps apart.
+    responses = [
+        "billing",
+        '{"summary": "double charge", "urgency": "high"}',
+        "We're sorry for the double charge and are looking into it.",
+    ]
 
     async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
-        # Return a value appropriate to whichever step's contract is in force,
-        # inferred from the model (keeps this fake simple and step-order-agnostic).
-        if model == "claude-haiku-4-5-20251001" and "categor" not in system_prompt.lower():
-            pass
-        return _RESPONSES_BY_MODEL.get(model, "billing")
+        calls.append(model)
+        return responses[len(calls) - 1]
 
     monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
 
@@ -87,13 +92,6 @@ def test_execute_full_process_runs_all_steps_in_registry_order(monkeypatch):
         }
     )
     assert list(result.keys()) == ["classify", "extract", "respond"]
-
-
-_RESPONSES_BY_MODEL = {
-    "claude-haiku-4-5-20251001": "billing",
-    "claude-sonnet-5": '{"summary": "double charge", "urgency": "high"}',
-    "claude-opus-4-8": "We're sorry for the double charge and are looking into it.",
-}
 
 
 def test_execute_dict_input_renders_placeholders(monkeypatch):

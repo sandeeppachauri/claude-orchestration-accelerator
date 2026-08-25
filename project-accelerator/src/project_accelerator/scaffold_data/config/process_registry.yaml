@@ -5,16 +5,16 @@ ticketClassification:
   classify:
     prompt: classify.yaml
     model: claude-haiku-4-5-20251001
-    fallback: [claude-sonnet-5, claude-opus-4-8]
+    fallback: [claude-haiku-4-5-20251001]
     max_turns: 1  # capability passthrough -- any extra key here reaches the model call untouched
   extract:
     prompt: extract_v2.yaml
-    model: claude-sonnet-5
+    model: claude-haiku-4-5-20251001
     fallback: [claude-haiku-4-5-20251001]
   respond:
     prompt: classify_soa.yaml
-    model: claude-opus-4-8
-    fallback: [claude-sonnet-5]
+    model: claude-haiku-4-5-20251001
+    fallback: [claude-haiku-4-5-20251001]
 
 templatingDemo:
   id: templatingDemo_01
@@ -29,13 +29,13 @@ templatingDemo:
   steps: [triage, escalate]
   triage:
     prompt: ticket_triage.yaml
-    model: claude-sonnet-5
+    model: claude-haiku-4-5-20251001
     fallback: [claude-haiku-4-5-20251001]
     # input must be a dict: {ticket_id, customer_name, customer_tier, body}
   escalate:
     prompt: escalation_decision.yaml
-    model: claude-opus-4-8
-    fallback: [claude-sonnet-5]
+    model: claude-haiku-4-5-20251001
+    fallback: [claude-haiku-4-5-20251001]
     # input must be a dict: {ticket_id, customer_name, customer_tier,
     # account_history, sla_minutes_remaining, body}
     #
@@ -50,6 +50,19 @@ templatingDemo:
     # sets are disjoint, not a shared superset.
     max_turns: 3                                   # agent_sdk
     permission_mode: acceptEdits                    # agent_sdk
+    # This step's job is "read the dossier, answer JSON" -- it has no
+    # legitimate use for any tool. Note: process_registry.yaml's own
+    # `allowed_tools` key (above, commented out) is NOT this -- it's
+    # popped off by call_agent_sdk() and only ever narrows MCP tool
+    # access (see .claude/rules/mcp-scope.md); non-MCP tools always pass
+    # through it untouched. `tools` below is the real
+    # ClaudeAgentOptions field that controls the full built-in toolset --
+    # without it, the model has Read/Write/Edit/Bash/... available and
+    # can burn its max_turns budget on tool-call round-trips instead of
+    # ever emitting the final JSON text turn, leaving raw_output empty
+    # no matter how high max_turns is set. `tools: []` = no tools
+    # reachable, forcing a direct text reply every turn.
+    tools: []                                       # agent_sdk
     # thinking disabled by default -- extended-thinking turns count
     # against max_turns and can starve the final JSON-text turn, leaving
     # raw_output empty and validate_output's json.loads() failing with
@@ -87,12 +100,12 @@ onboarding:
   welcome:
     prompt: welcome.yaml
     model: claude-haiku-4-5-20251001
-    fallback: [claude-sonnet-5]
+    fallback: [claude-haiku-4-5-20251001]
   verify:
     prompt: verify_kyc.yaml
-    model: claude-sonnet-5
+    model: claude-haiku-4-5-20251001
     fallback: [claude-haiku-4-5-20251001]
   finalize:
     prompt: finalize.yaml
-    model: claude-opus-4-8
-    fallback: [claude-sonnet-5]
+    model: claude-haiku-4-5-20251001
+    fallback: [claude-haiku-4-5-20251001]

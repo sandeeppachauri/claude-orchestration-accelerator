@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .exceptions import RateLimitOrOverloadError
+from .exceptions import AgentProducedNoTextError, RateLimitOrOverloadError
 
 _RATE_LIMIT_MARKERS = ("rate limit", "rate_limit", "overloaded", "429", "529")
 
@@ -61,7 +61,7 @@ async def call_agent_sdk(
     the SDK's own default .mcp.json/global-settings MCP discovery is
     left untouched (ClaudeAgentOptions.mcp_servers itself is never set
     here)."""
-    from claude_agent_sdk import AssistantMessage, TextBlock, query
+    from claude_agent_sdk import AssistantMessage, TextBlock, ToolUseBlock, query
 
     from auth_accelerator import build_options
     from orchestration_accelerator.logging import get_default_hooks
@@ -89,16 +89,29 @@ async def call_agent_sdk(
     )
 
     text = ""
+    tool_call_count = 0
     try:
         async for message in query(prompt=user_content, options=options):
             if isinstance(message, AssistantMessage):
                 for block in message.content:
                     if isinstance(block, TextBlock):
                         text += block.text
+                    elif isinstance(block, ToolUseBlock):
+                        tool_call_count += 1
     except Exception as exc:  # noqa: BLE001 - re-tag rate-limit/overload errors uniformly
         if _looks_like_rate_limit_or_overload(exc):
             raise RateLimitOrOverloadError(str(exc)) from exc
         raise
+
+    if not text:
+        raise AgentProducedNoTextError(
+            f"agent_sdk query for model {model!r} completed with max_turns={max_turns} "
+            f"but produced no text output ({tool_call_count} tool call(s) made instead). "
+            "The model likely spent its whole turn budget on tool use rather than "
+            "replying -- check this step's `tools`/`permission_mode` in "
+            "process_registry.yaml (set `tools: []` if the step should never need a "
+            "tool), or raise max_turns if tool use is actually required."
+        )
     return text
 
 

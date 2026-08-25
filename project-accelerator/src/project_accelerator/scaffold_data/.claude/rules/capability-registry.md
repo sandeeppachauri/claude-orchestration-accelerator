@@ -17,9 +17,19 @@ three) and `.claude/rules/guardrails-registry.md` (`guardrails`) --
 hooks rather than forwarded to `ClaudeAgentOptions`/`messages.create()`
 directly; only `skills` is a real passthrough field on both backends.
 
+`tools`/`disallowed_tools` are real `ClaudeAgentOptions` fields, distinct
+from `allowed_tools` above: `allowed_tools`/`mcp_servers` only ever
+narrow *MCP* tool access (non-MCP tool names always pass through them
+untouched -- see `.claude/rules/mcp-scope.md`), while `tools`/
+`disallowed_tools` control the model's whole built-in toolset
+(Read/Write/Edit/Bash/...). A step that should never need a tool (e.g.
+"read this input, answer JSON") should set `tools: []` -- otherwise the
+model can spend its entire `max_turns` budget on tool-call round-trips
+instead of ever emitting a final text turn, leaving `raw_output` empty.
+
 ```yaml
 agent_sdk:
-  allowed: [max_turns, thinking, max_thinking_tokens, effort, permission_mode, fallback_model, mcp_servers, allowed_tools, guardrails, skills]
+  allowed: [max_turns, thinking, max_thinking_tokens, effort, permission_mode, fallback_model, tools, disallowed_tools, mcp_servers, allowed_tools, guardrails, skills]
 messages_api:
   allowed: [temperature, top_p, max_tokens, thinking, stop_sequences, skills]
 ```

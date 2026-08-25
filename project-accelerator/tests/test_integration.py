@@ -26,15 +26,19 @@ def _patch_logging(monkeypatch):
 
 def test_full_ticket_classification_pipeline(monkeypatch):
     calls = []
+    # Keyed by call order (classify, extract, respond -- the registry's
+    # `steps` order), not by model: every step in this process is
+    # configured to the same claude-haiku-4-5-20251001 model, so a
+    # model-keyed fixture couldn't tell the steps apart.
+    responses = [
+        "technical",
+        '{"summary": "app crashes on login", "urgency": "medium"}',
+        "Thanks for reporting -- we are investigating the login crash.",
+    ]
 
     async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
         calls.append((model, backend, environment))
-        responses = {
-            "claude-haiku-4-5-20251001": "technical",
-            "claude-sonnet-5": '{"summary": "app crashes on login", "urgency": "medium"}',
-            "claude-opus-4-8": "Thanks for reporting -- we are investigating the login crash.",
-        }
-        return responses[model]
+        return responses[len(calls) - 1]
 
     monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
 
@@ -55,14 +59,20 @@ def test_full_ticket_classification_pipeline(monkeypatch):
 
 
 def test_onboarding_pipeline_messages_api_backend(monkeypatch):
+    calls = []
+    # Keyed by call order (welcome, verify, finalize) -- see the
+    # ticket-classification test above for why this can't be keyed by
+    # model name.
+    responses = [
+        "Welcome aboard!",
+        "complete",
+        "Your onboarding is now complete.",
+    ]
+
     async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
         assert backend == "messages_api"
-        responses = {
-            "claude-haiku-4-5-20251001": "Welcome aboard!",
-            "claude-sonnet-5": "complete",
-            "claude-opus-4-8": "Your onboarding is now complete.",
-        }
-        return responses[model]
+        calls.append(model)
+        return responses[len(calls) - 1]
 
     monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
 
