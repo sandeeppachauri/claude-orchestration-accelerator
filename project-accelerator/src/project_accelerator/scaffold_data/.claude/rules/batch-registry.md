@@ -23,6 +23,23 @@ Rules:
   step; a multi-step process requires `step` to pick which one runs
   across the batch. It can never reorder or subset a process's `steps`
   list beyond that one selection, same rule as `config/process_registry.yaml`.
+- **Why `step` lives here instead of in `execute_batch()`'s payload
+  (deliberate, reviewed design choice):** `execute()`'s payload carries
+  `step` because each call is one-shot and self-contained. A
+  `batch_registry.yaml` entry is different -- `poll_interval_seconds`/
+  `poll_timeout_seconds` are tuned for *that specific step's* expected
+  latency (a slow step legitimately needs a longer timeout than a fast
+  one). If `step` were a payload argument instead, one entry's poll
+  timeout could silently apply to whichever step a caller passes at
+  runtime -- e.g. a `poll_timeout_seconds: 300` tuned for a fast
+  `classify` step, called instead against a slow `respond` step, timing
+  out before the batch actually finishes. Keeping `process` + `step` +
+  `poll_*` together in one named entry makes each `batch_registry.yaml`
+  block a complete, self-consistent job recipe -- not just a step
+  reference -- so the poll timing can never drift out of sync with the
+  step it was tuned for. `execute_batch()`'s payload intentionally stays
+  `{batch_id, inputs, environment?}` -- no `step` override -- for this
+  reason.
 - Batch processing submits every item in `execute_batch()`'s
   `payload["inputs"]` as a single Anthropic Message Batches API job
   (`messages.batches.create`), polls `poll_interval_seconds` apart until

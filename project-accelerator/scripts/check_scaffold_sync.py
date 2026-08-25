@@ -206,6 +206,15 @@ def check_examples_referenced(errors: list[str]) -> None:
     if root_mcp.exists() and not scaffold_mcp.exists():
         errors.append(f"{root_mcp} exists but {scaffold_mcp} is missing")
 
+    root_team_guide = REPO_ROOT / "docs" / "Claude_Orchestration_Accelerator_Team_Guide.docx"
+    scaffold_team_guide = SCAFFOLD_DATA / "docs" / "Claude_Orchestration_Accelerator_Team_Guide.docx"
+    if root_team_guide.exists() and not scaffold_team_guide.exists():
+        errors.append(
+            f"{root_team_guide.relative_to(REPO_ROOT)} exists but "
+            f"{scaffold_team_guide.relative_to(REPO_ROOT)} is missing -- "
+            f"team guide not mirrored into the scaffold"
+        )
+
 
 def main() -> int:
     errors: list[str] = []
