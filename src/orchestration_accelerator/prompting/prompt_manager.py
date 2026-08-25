@@ -132,6 +132,19 @@ class PromptManager:
             user_prompt=raw.get("user_prompt"),
         )
 
+    def has_placeholders(self, step: str, filename: str | None = None) -> bool:
+        """Whether this step's prompt declares any `{{key}}` placeholder --
+        i.e. whether it takes the templated-dict input path in render()
+        rather than the legacy plain-string path. Lets a caller (the
+        step loop in core.py) decide up front whether to build a dict
+        of prior-step outputs for this step, without duplicating
+        render()'s placeholder-detection logic."""
+        cfg = self.get(step, filename=filename)
+        placeholders = set(_PLACEHOLDER_RE.findall(cfg.system_prompt))
+        if cfg.user_prompt is not None:
+            placeholders |= set(_PLACEHOLDER_RE.findall(cfg.user_prompt))
+        return bool(placeholders)
+
     def render(
         self, step: str, values: dict[str, Any] | str, filename: str | None = None
     ) -> tuple[PromptConfig, str, str]:

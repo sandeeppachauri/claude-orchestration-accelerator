@@ -151,6 +151,43 @@ def test_execute_full_process_runs_all_steps_in_registry_order(monkeypatch):
     assert list(result.keys()) == ["classify", "extract", "respond"]
 
 
+def test_execute_full_process_threads_prior_step_outputs(monkeypatch):
+    _patch_logging(monkeypatch)
+
+    seen_user_content = []
+    responses = [
+        "billing",
+        '{"summary": "double charge", "urgency": "high"}',
+        "We're sorry for the double charge and are looking into it.",
+    ]
+
+    async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
+        seen_user_content.append(user_content)
+        return responses[len(seen_user_content) - 1]
+
+    monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
+
+    execute(
+        {
+            "process": "ticketClassification",
+            "input": "I was double charged",
+            "backend": "agent_sdk",
+        }
+    )
+
+    # classify: legacy plain-string path, unaffected by threading.
+    assert seen_user_content[0] == "I was double charged"
+    # extract: must see classify's output plus the original ticket text.
+    assert "billing" in seen_user_content[1]
+    assert "I was double charged" in seen_user_content[1]
+    # respond: must see both classify's and extract's outputs plus the
+    # original ticket text -- this is the exact data classify_soa.yaml's
+    # system_prompt tells the model it will have.
+    assert "billing" in seen_user_content[2]
+    assert "double charge" in seen_user_content[2]
+    assert "I was double charged" in seen_user_content[2]
+
+
 def test_execute_dict_input_renders_placeholders(monkeypatch):
     _patch_logging(monkeypatch)
 

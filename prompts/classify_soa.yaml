@@ -27,3 +27,11 @@ system_prompt: |
   CONSTRAINTS:
   - Stay under the word limit.
   - Be polite and reference the category and extracted context you were given.
+
+user_prompt: |
+  Ticket category: {{classify_output}}
+
+  Extracted facts: {{extract_output}}
+
+  Original ticket text:
+  {{input}}

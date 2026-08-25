@@ -30,3 +30,9 @@ system_prompt: |
   CONSTRAINTS:
   - Output must be valid JSON, nothing else.
   - Do not add keys beyond summary and urgency.
+
+user_prompt: |
+  Ticket category: {{classify_output}}
+
+  Ticket text:
+  {{input}}

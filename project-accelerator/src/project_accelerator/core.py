@@ -325,10 +325,27 @@ async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
         raise
     results: dict[str, Any] = {}
     for turn_index, (step_name, step_config) in enumerate(steps_to_run):
+        # Prior steps' outputs are made available to later steps as
+        # `{{<step>_output}}` placeholders, alongside `{{input}}` -- a
+        # step's prompt YAML opts in by declaring the placeholders it
+        # needs (see PromptManager.render()). Steps with no placeholders
+        # (the legacy plain-string path, e.g. onboarding's `verify`)
+        # must keep receiving the raw input_data unchanged -- render()
+        # rejects a dict input outright when a step declares zero
+        # placeholders, so that check is mirrored here up front via
+        # has_placeholders() rather than always building a dict.
+        step_input: str | dict[str, Any] = input_data
+        prompt_file = step_config.get("prompt")
+        if results and prompt_file is not None:
+            pm = PromptManager(prompts_dir=prompts_dir)
+            if pm.has_placeholders(step_name, filename=prompt_file):
+                step_input = {"input": input_data}
+                step_input.update({f"{name}_output": out for name, out in results.items()})
+
         results[step_name] = await _run_one_step(
             step_name,
             step_config,
-            input_data,
+            step_input,
             backend,
             environment,
             session_id,
