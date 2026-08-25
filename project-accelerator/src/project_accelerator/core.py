@@ -233,7 +233,14 @@ async def _run_one_step(
             session_id,
             turn_index,
             model=model,
-            payload={"step": step_name, "input": input_data},
+            payload={
+                "step": step_name,
+                "input": input_data,
+                "system_prompt": system_prompt,
+                "user_content": user_content,
+                "fallback": fallback,
+                "capabilities": capabilities,
+            },
         )
 
         raw_output = await execute_with_fallback(
