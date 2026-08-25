@@ -253,8 +253,13 @@ class PromptManager:
                         f"[{step} v{cfg.version}] output is empty ('').",
                     )
                 )
+            cleaned = output.strip()
+            if cleaned.startswith("```"):
+                cleaned = re.sub(r"^```[a-zA-Z]*\n?", "", cleaned)
+                cleaned = re.sub(r"\n?```$", "", cleaned).strip()
+
             try:
-                parsed = json.loads(output.strip())
+                parsed = json.loads(cleaned)
             except json.JSONDecodeError as e:
                 raise OutputContractError(
                     friendly_error(

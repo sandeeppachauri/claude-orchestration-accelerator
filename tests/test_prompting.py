@@ -53,6 +53,17 @@ def test_validate_output_json_ok():
     assert result["urgency"] == "high"
 
 
+def test_validate_output_json_strips_markdown_fence():
+    pm = PromptManager()
+    cfg = pm.get("extract", filename="extract_v2.yaml")
+    result = pm.validate_output(
+        "extract",
+        cfg,
+        '```json\n{"summary": "billing issue", "urgency": "high"}\n```',
+    )
+    assert result["urgency"] == "high"
+
+
 def test_render_static_only_string_input_unchanged():
     pm = PromptManager()
     cfg, system_prompt, user_content = pm.render("classify", "I was double charged")
