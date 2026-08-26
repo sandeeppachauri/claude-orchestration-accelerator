@@ -31,7 +31,7 @@ instead of ever emitting a final text turn, leaving `raw_output` empty.
 agent_sdk:
   allowed: [max_turns, thinking, max_thinking_tokens, effort, permission_mode, fallback_model, tools, disallowed_tools, mcp_servers, allowed_tools, guardrails, skills]
 messages_api:
-  allowed: [temperature, top_p, max_tokens, thinking, stop_sequences, skills]
+  allowed: [temperature, top_p, max_tokens, thinking, stop_sequences, skills, cache_control]
 ```
 
 Rules:
@@ -72,6 +72,20 @@ Rules:
   entirely) resolves to an empty allowed set -- any capability key set
   against that backend fails validation, rather than being silently
   permitted.
+- `cache_control` (Anthropic prompt caching) is deliberately
+  **messages_api-only** -- the Messages API exposes explicit,
+  controllable cache breakpoints (`{"type": "ephemeral", "ttl": "5m"}`),
+  while the agent_sdk backend only does automatic, opaque system-prompt
+  caching with no field to set and no TTL control. Setting `cache_control`
+  on an agent_sdk-backed step fails whitelist validation immediately
+  (`UnsupportedCapabilityError`) rather than silently no-opping. This
+  registry entry only gates *whether* a step may set `cache_control` at
+  all -- the concrete `type`/`ttl` value is process-specific and lives in
+  `config/process_registry.yaml`'s step block (same tier as
+  `model`/`fallback`), not here. See `config/process_registry.yaml`'s
+  `templatingDemo.triage` step for the commented-out worked example, and
+  `call_messages_api()` in `model-router/src/model_router_accelerator/backends.py`
+  for how the value is applied to the system-prompt content block.
 
 See `config/capability_registry.yaml` (repo root) for the shipped defaults, and
 `config/process_registry.yaml`'s `templatingDemo.escalate` step for a worked

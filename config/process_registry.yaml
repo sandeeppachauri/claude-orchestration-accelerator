@@ -32,6 +32,13 @@ templatingDemo:
     model: claude-haiku-4-5-20251001
     fallback: [claude-haiku-4-5-20251001]
     # input must be a dict: {ticket_id, customer_name, customer_tier, body}
+    #
+    # Prompt caching -- messages_api-only (see capability_registry.yaml's
+    # cache_control entry; the agent_sdk backend caches the system prompt
+    # automatically/opaquely and has no controllable field). The registry
+    # key only gates whether cache_control may be set at all; the actual
+    # type/ttl is supplied here, per-step, since it's process-specific:
+    # cache_control: {type: ephemeral, ttl: 5m}   # messages_api; ttl optional, default "5m"
   escalate:
     prompt: escalation_decision.yaml
     model: claude-haiku-4-5-20251001

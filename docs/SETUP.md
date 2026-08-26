@@ -149,11 +149,16 @@ cpa new --project-name my-app --venv        # creates my-app/.venv and installs 
 cpa new --project-name my-app --path /some/other/dir --venv   # scaffold elsewhere
 # or
 cpa new --project-name my-app --python /path/to/existing/venv/bin/python  # reuse an existing env
+# or
+cpa new --project-name my-app --sample-needed no   # skip the templatingDemo example
 ```
 
 `--path` defaults to the current directory. `--python` installs into an
 existing interpreter/venv instead of creating one and cannot be combined
-with `--venv`.
+with `--venv`. `--sample-needed yes|no` (default `yes`) controls whether
+the `templatingDemo` example process and its `dummyDemoSkill` are
+included; `no` scaffolds a clean project with just `ticketClassification`/
+`onboarding`.
 
 By default `cpa new` looks for the sibling `Accelerators` repo (containing
 `claude-auth-accelerator` and `ClaudeSDKLoggerAccelerator`) at
@@ -189,7 +194,8 @@ installs `claude-auth-accelerator`/`ClaudeSDKLoggerAccelerator` from the
 This generates, under `./my-app/` (or `<path>/my-app/` with `--path`):
 
 - `prompts/*.yaml`, `process_registry.yaml` (pre-populated with the
-  `ticketClassification` and `onboarding` sample processes)
+  `ticketClassification` and `onboarding` sample processes, plus
+  `templatingDemo` unless `--sample-needed no` was passed)
 - `.env` (`ENVIRONMENT=local`, `DEFAULT_MODEL=claude-sonnet-5`)
 - `logger_config.json`
 - `pipeline/run_pipeline.py` (reads steps/config from `process_registry.yaml`

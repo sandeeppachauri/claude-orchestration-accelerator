@@ -2,10 +2,11 @@
 #
 # Whitelist of process_registry.yaml step keys allowed to pass through to
 # each backend's model call (see .claude/rules/process-registry.md's
-# "capability passthrough" rule). Validated before a step's capabilities
-# ever reach claude_agent_sdk / anthropic -- an unlisted key raises
-# UnsupportedCapabilityError immediately, instead of a TypeError several
-# layers deep inside the SDK.
+# "capability passthrough" rule). Validated by
+# orchestration_accelerator.registry.get_allowed_capabilities() before a
+# step's capabilities ever reach claude_agent_sdk / anthropic -- an
+# unlisted key raises UnsupportedCapabilityError immediately, instead of a
+# TypeError several layers deep inside the SDK.
 #
 # This file is deliberately NOT environment-specific (unlike .env): the
 # same keys must be valid on every environment a given backend runs in,
@@ -61,3 +62,13 @@ messages_api:
     # container.skills shape -- see .claude/rules/mcp-scope.md's sibling
     # skills note.
     - skills
+    # Prompt caching (Anthropic ephemeral cache_control breakpoints).
+    # messages_api-only: the Messages API exposes explicit, controllable
+    # cache_control blocks (type + optional ttl); the agent_sdk backend
+    # only does automatic, opaque system-prompt caching with no field to
+    # set and no TTL control, so this key is deliberately absent from
+    # agent_sdk.allowed above. This entry only gates whether a step may
+    # set cache_control at all -- the concrete {type, ttl} value is
+    # process-specific and supplied per-step in config/process_registry.yaml,
+    # not here. See .claude/rules/capability-registry.md.
+    - cache_control

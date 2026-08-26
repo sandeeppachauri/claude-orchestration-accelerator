@@ -46,7 +46,10 @@ def _scaffold_data_dir() -> Path:
     return Path(str(importlib.resources.files("project_accelerator") / "scaffold_data"))
 
 
-def _copy_reference_skeleton(dest: Path) -> None:
+_SAMPLE_PROMPT_FILES = {"ticket_triage.yaml", "escalation_decision.yaml"}
+
+
+def _copy_reference_skeleton(dest: Path, include_samples: bool = True) -> None:
     """One-time snapshot copy of the packaged reference Claude Code project
     skeleton -- not a live link. A scaffolded project owns its own copy and
     can diverge afterward."""
@@ -61,18 +64,32 @@ def _copy_reference_skeleton(dest: Path) -> None:
         else:
             shutil.copy2(src, target)
 
+    if not include_samples:
+        dummy_skill_dir = dest / ".claude" / "skills" / "dummyDemoSkill"
+        if dummy_skill_dir.exists():
+            shutil.rmtree(dummy_skill_dir)
 
-def _copy_sample_config(dest: Path) -> None:
+
+def _copy_sample_config(dest: Path, include_samples: bool = True) -> None:
     data_dir = _scaffold_data_dir()
     config_dest = dest / "config"
     config_dest.mkdir(exist_ok=True)
-    shutil.copy2(data_dir / "config" / "process_registry.yaml", config_dest / "process_registry.yaml")
+    if include_samples:
+        shutil.copy2(data_dir / "config" / "process_registry.yaml", config_dest / "process_registry.yaml")
+    else:
+        import yaml
+
+        registry = yaml.safe_load((data_dir / "config" / "process_registry.yaml").read_text())
+        registry.pop("templatingDemo", None)
+        (config_dest / "process_registry.yaml").write_text(yaml.safe_dump(registry, sort_keys=False))
     shutil.copy2(data_dir / "config" / "batch_registry.yaml", config_dest / "batch_registry.yaml")
     shutil.copy2(data_dir / "config" / "capability_registry.yaml", config_dest / "capability_registry.yaml")
     shutil.copy2(data_dir / "config" / "guardrails.yaml", config_dest / "guardrails.yaml")
     prompts_dest = dest / "prompts"
     prompts_dest.mkdir(exist_ok=True)
     for prompt_file in (data_dir / "prompts").glob("*.yaml"):
+        if not include_samples and prompt_file.name in _SAMPLE_PROMPT_FILES:
+            continue
         shutil.copy2(prompt_file, prompts_dest / prompt_file.name)
 
 
@@ -94,7 +111,54 @@ def _write_logger_config(dest: Path) -> None:
     shutil.copy2(DEFAULT_LOGGER_CONFIG_PATH, dest / "logger_config.json")
 
 
-def _write_readme(dest: Path, project_name: str) -> None:
+def _write_readme(dest: Path, project_name: str, include_samples: bool = True) -> None:
+    samples_line = (
+        """Three sample processes ship out of the box: `ticketClassification`
+(`classify` -> `extract` -> `respond`), `onboarding` (`welcome` ->
+`verify` -> `finalize`), and `templatingDemo` (`triage` -> `escalate`,
+demonstrating runtime `{{key}}` placeholders -- see "Runtime input" below).
+Edit `config/process_registry.yaml` and `prompts/*.yaml` to add your own, or
+remove the samples once you've replaced them."""
+        if include_samples
+        else """Two sample processes ship out of the box: `ticketClassification`
+(`classify` -> `extract` -> `respond`) and `onboarding` (`welcome` ->
+`verify` -> `finalize`). Edit `config/process_registry.yaml` and
+`prompts/*.yaml` to add your own, or remove the samples once you've
+replaced them. (Scaffolded with `--sample-needed no`, so the
+`templatingDemo` runtime-placeholder example was omitted -- see
+`.claude/rules/process-registry.md`'s "Runtime input & {{key}} placeholders"
+section for that pattern if you need it later.)"""
+    )
+    runtime_input_section = (
+        """
+## Runtime input (`{{key}}` placeholders)
+
+`prompts/*.yaml`'s `system_prompt` and optional `user_prompt` fields may
+contain `{{key}}` placeholders, filled at call time from `execute()`'s
+payload `"input"`:
+
+| Prompt has placeholders? | `input` must be | Example |
+| --- | --- | --- |
+| No | a plain string | `"input": "some ticket text"` |
+| Yes | a dict covering every `{{key}}`, no extras | `"input": {{"ticket_id": "T-1", "body": "..."}}` |
+
+Every placeholder needs a matching dict key and every dict key needs a
+matching placeholder -- either mismatch raises immediately (fail fast,
+never a silently blank or ignored value). Three worked examples ship in
+`prompts/`:
+
+1. `classify.yaml` -- static only, no placeholders (plain string input).
+2. `ticket_triage.yaml` -- 4 placeholders in a static `user_prompt`
+   (`templatingDemo.triage`).
+3. `escalation_decision.yaml` -- placeholders in *both* `system_prompt`
+   and `user_prompt`, paired with a full capability-key spread in
+   `config/process_registry.yaml`'s `templatingDemo.escalate` step.
+
+See `docs/HOWTO.md` for a full walkthrough and runnable snippets.
+"""
+        if include_samples
+        else ""
+    )
     (dest / "README.md").write_text(
         f"""# {project_name}
 
@@ -121,12 +185,7 @@ Scaffolded by `cpa new --project-name {project_name}` from
 - `logger_config.json` -- default logging wrapper config.
 - `tests/test_sample_pipeline.py` -- smoke test for the sample process.
 
-Three sample processes ship out of the box: `ticketClassification`
-(`classify` -> `extract` -> `respond`), `onboarding` (`welcome` ->
-`verify` -> `finalize`), and `templatingDemo` (`triage` -> `escalate`,
-demonstrating runtime `{{key}}` placeholders -- see "Runtime input" below).
-Edit `config/process_registry.yaml` and `prompts/*.yaml` to add your own, or
-remove the samples once you've replaced them.
+{samples_line}
 
 ## Run
 
@@ -181,6 +240,7 @@ key passes straight through to the model call, no code change needed:
 | `temperature` | `messages_api` | `temperature: 0.2` |
 | `top_p` | `messages_api` | `top_p: 0.9` |
 | `max_tokens` | `messages_api` | `max_tokens: 2048` |
+| `cache_control` | `messages_api` | `cache_control: {{type: ephemeral, ttl: 5m}}` |
 
 ```yaml
 classify:
@@ -192,31 +252,7 @@ classify:
 
 See `.claude/rules/process-registry.md` for the full schema.
 
-## Runtime input (`{{key}}` placeholders)
-
-`prompts/*.yaml`'s `system_prompt` and optional `user_prompt` fields may
-contain `{{key}}` placeholders, filled at call time from `execute()`'s
-payload `"input"`:
-
-| Prompt has placeholders? | `input` must be | Example |
-| --- | --- | --- |
-| No | a plain string | `"input": "some ticket text"` |
-| Yes | a dict covering every `{{key}}`, no extras | `"input": {{"ticket_id": "T-1", "body": "..."}}` |
-
-Every placeholder needs a matching dict key and every dict key needs a
-matching placeholder -- either mismatch raises immediately (fail fast,
-never a silently blank or ignored value). Three worked examples ship in
-`prompts/`:
-
-1. `classify.yaml` -- static only, no placeholders (plain string input).
-2. `ticket_triage.yaml` -- 4 placeholders in a static `user_prompt`
-   (`templatingDemo.triage`).
-3. `escalation_decision.yaml` -- placeholders in *both* `system_prompt`
-   and `user_prompt`, paired with a full capability-key spread in
-   `config/process_registry.yaml`'s `templatingDemo.escalate` step.
-
-See `docs/HOWTO.md` for a full walkthrough and runnable snippets.
-
+{runtime_input_section}
 ## File upload and batch processing
 
 ```python
@@ -263,48 +299,12 @@ See `docs/HOWTO.md` for a file-by-file breakdown and getting-started steps.
     )
 
 
-def _write_howto(dest: Path, project_name: str) -> None:
+def _write_howto(dest: Path, project_name: str, include_samples: bool = True) -> None:
     docs_dest = dest / "docs"
     docs_dest.mkdir(exist_ok=True)
-    (docs_dest / "HOWTO.md").write_text(
-        f"""# How to use {project_name}
 
-What each generated file is for, and how to get from a fresh checkout to
-a running pipeline.
-
-## Getting started
-
-1. Create/activate a virtualenv and make sure the four accelerator
-   packages are installed into it (`cpa new` already did this for the
-   environment you scaffolded into -- re-run it with `--python` pointed
-   at a different interpreter if you need another one).
-2. Set a credential: `ANTHROPIC_API_KEY` env var, or run `claude login`
-   for an ambient OAuth session. Not needed for `pytest` (everything is
-   mocked) -- only for actually calling a model.
-3. Run the smoke test: `pytest tests/test_sample_pipeline.py`.
-4. Run the sample pipeline end to end:
-   `python pipeline/run_pipeline.py ticketClassification "sample ticket text"`.
-5. Open `config/process_registry.yaml` and `prompts/*.yaml` and start replacing
-   the sample `ticketClassification`/`onboarding` processes with your own.
-
-## File-by-file
-
-- **`config/process_registry.yaml`** -- the single source of truth for every
-  process's step order and per-step `{{prompt, model, fallback}}` config.
-  It's here because nothing about which steps run, in what order, or with
-  which model is allowed to be hardcoded in application code -- a payload
-  can only select a process (and optionally narrow to one step), never
-  reorder or subset the `steps` list. Edit this file to add a process or
-  change a step's model/fallback. Any other key on a step (`max_turns`,
-  `thinking`, `temperature`, `top_p`, `permission_mode`, ...) is a
-  capability passthrough -- it flows untouched to the model call, so you
-  can tune a step's behavior from this file alone, no code change. See
-  `.claude/rules/process-registry.md` for the full schema.
-
-- **`prompts/*.yaml`** -- the prompt templates each registry step points
-  at by name. They're separate files (not inline in the registry) so
-  prompt text can be reviewed/edited independently of step wiring.
-
+    templating_section = (
+        """
 ## Runtime input: `{{key}}` placeholders end to end
 
 A prompt's `system_prompt` and optional `user_prompt` fields can embed
@@ -375,7 +375,61 @@ Three shipped examples, simplest to most complex:
        "backend": "agent_sdk",
    }})
    ```
+"""
+        if include_samples
+        else """
+## Runtime input: `{{key}}` placeholders
 
+Prompts under `prompts/` may declare `{{key}}` placeholders in
+`system_prompt`/`user_prompt`, filled at call time from `execute()`'s
+payload `"input"` (which must then be a dict, not a plain string). This
+scaffold was created with `--sample-needed no`, so the worked
+`templatingDemo` example demonstrating this is not included here -- see
+`.claude/rules/process-registry.md`'s "Runtime input & {{key}} placeholders"
+section for the full pattern.
+"""
+    )
+
+    (docs_dest / "HOWTO.md").write_text(
+        f"""# How to use {project_name}
+
+What each generated file is for, and how to get from a fresh checkout to
+a running pipeline.
+
+## Getting started
+
+1. Create/activate a virtualenv and make sure the four accelerator
+   packages are installed into it (`cpa new` already did this for the
+   environment you scaffolded into -- re-run it with `--python` pointed
+   at a different interpreter if you need another one).
+2. Set a credential: `ANTHROPIC_API_KEY` env var, or run `claude login`
+   for an ambient OAuth session. Not needed for `pytest` (everything is
+   mocked) -- only for actually calling a model.
+3. Run the smoke test: `pytest tests/test_sample_pipeline.py`.
+4. Run the sample pipeline end to end:
+   `python pipeline/run_pipeline.py ticketClassification "sample ticket text"`.
+5. Open `config/process_registry.yaml` and `prompts/*.yaml` and start replacing
+   the sample `ticketClassification`/`onboarding` processes with your own.
+
+## File-by-file
+
+- **`config/process_registry.yaml`** -- the single source of truth for every
+  process's step order and per-step `{{prompt, model, fallback}}` config.
+  It's here because nothing about which steps run, in what order, or with
+  which model is allowed to be hardcoded in application code -- a payload
+  can only select a process (and optionally narrow to one step), never
+  reorder or subset the `steps` list. Edit this file to add a process or
+  change a step's model/fallback. Any other key on a step (`max_turns`,
+  `thinking`, `temperature`, `top_p`, `permission_mode`, ...) is a
+  capability passthrough -- it flows untouched to the model call, so you
+  can tune a step's behavior from this file alone, no code change. See
+  `.claude/rules/process-registry.md` for the full schema.
+
+- **`prompts/*.yaml`** -- the prompt templates each registry step points
+  at by name. They're separate files (not inline in the registry) so
+  prompt text can be reviewed/edited independently of step wiring.
+
+{templating_section}
 Full capability-passthrough key reference (any step key besides
 `prompt`/`model`/`fallback`/`system_prompt` flows straight through to the
 model call, after passing `config/capability_registry.yaml`'s per-backend
@@ -400,6 +454,7 @@ whitelist -- see `.claude/rules/process-registry.md` and
 | `top_p` | `messages_api` | nucleus sampling cutoff |
 | `max_tokens` | `messages_api` | response token cap |
 | `stop_sequences` | `messages_api` | strings that stop generation |
+| `cache_control` | `messages_api` | Anthropic prompt-cache breakpoint on the system prompt, e.g. `{{type: ephemeral, ttl: 5m}}`; agent_sdk caches automatically/opaquely and has no equivalent field |
 
 See `.claude/rules/mcp-scope.md` (`mcp_servers`/`allowed_tools`/`skills`)
 and `.claude/rules/guardrails-registry.md` (`guardrails`) for full detail
@@ -571,62 +626,7 @@ if __name__ == "__main__":
     )
 
 
-def _write_sample_usage(dest: Path) -> None:
-    examples_dir = dest / "examples"
-    examples_dir.mkdir(exist_ok=True)
-    (examples_dir / "sample_usage.py").write_text(
-        '''"""
-sample_usage.py
-
-Two worked examples of the library entry point, as shown in docs/SETUP.md
-step 11 ("Using the library entry point directly"). Needs a real
-credential (ANTHROPIC_API_KEY env var or an ambient `claude login` OAuth
-session) to actually call a model. Run: python examples/sample_usage.py
-
-Logging is on by default -- execute() logs every turn via
-orchestration_accelerator's logging wrapper, configured from this
-project's own logger_config.json. No setup needed; trace lines land
-under ./logs/trace.log.
-
-Example 1 (static input) -- TicketClassifier wraps the ticketClassification
-process, whose classify.yaml prompt has no {{key}} placeholders, so
-`input` is just a plain string.
-
-Example 2 (dynamic / templated input, single step) -- TicketTriager
-wraps templatingDemo's `triage` step alone (step is narrowed), whose
-ticket_triage.yaml prompt has {{key}} placeholders. `input` here must
-be a dict covering every placeholder triage.yaml declares --
-PromptManager.render() fills them in at call time.
-
-Example 3 (dynamic / templated input, full process) -- TicketEscalator
-wraps templatingDemo with NO `step` narrowing, so both `triage` and
-`escalate` run in order against the SAME `input` dict. `escalate`
-needs two keys `triage` doesn't (account_history,
-sla_minutes_remaining), so `input` here is the union of every
-placeholder either step declares. Each step only consumes the subset
-it needs from the shared dict -- a key destined for the other step is
-present but simply unused for a given step, not an error.
-"""
-
-from project_accelerator import execute
-
-
-class TicketClassifier:
-    """Thin wrapper around execute() for the ticketClassification process (static input)."""
-
-    def __init__(self, environment: str = "local", backend: str = "agent_sdk") -> None:
-        self.environment = environment
-        self.backend = backend
-
-    def classify(self, input_text: str) -> dict:
-        return execute({
-            "process": "ticketClassification",
-            "step": "classify",          # optional -- omit to run the full process
-            "input": input_text,
-            "environment": self.environment,  # optional -- falls back to .env's ENVIRONMENT
-            "backend": self.backend,     # "agent_sdk" | "messages_api"
-        })
-
+_SAMPLE_USAGE_TEMPLATING_CLASSES = '''
 
 class TicketTriager:
     """Thin wrapper around execute() for templatingDemo's `triage` step alone (dynamic/templated input)."""
@@ -681,14 +681,9 @@ class TicketEscalator:
             "environment": self.environment,
             "backend": self.backend,
         })
+'''
 
-
-def main() -> None:
-    print("--- Example 1: static input ---")
-    classifier = TicketClassifier()
-    result = classifier.classify("sample ticket text")
-    print(result)
-
+_SAMPLE_USAGE_TEMPLATING_MAIN = '''
     print("--- Example 2: dynamic / templated input, single step ---")
     triager = TicketTriager()
     result = triager.triage(
@@ -710,14 +705,85 @@ def main() -> None:
         sla_minutes_remaining=45,
     )
     print(result)
+'''
 
+
+def _write_sample_usage(dest: Path, include_samples: bool = True) -> None:
+    examples_dir = dest / "examples"
+    examples_dir.mkdir(exist_ok=True)
+
+    doc_extra = (
+        """
+
+Example 1 (static input) -- TicketClassifier wraps the ticketClassification
+process, whose classify.yaml prompt has no {{key}} placeholders, so
+`input` is just a plain string.
+
+Example 2 (dynamic / templated input, single step) -- TicketTriager
+wraps templatingDemo's `triage` step alone (step is narrowed), whose
+ticket_triage.yaml prompt has {{key}} placeholders. `input` here must
+be a dict covering every placeholder triage.yaml declares --
+PromptManager.render() fills them in at call time.
+
+Example 3 (dynamic / templated input, full process) -- TicketEscalator
+wraps templatingDemo with NO `step` narrowing, so both `triage` and
+`escalate` run in order against the SAME `input` dict. `escalate`
+needs two keys `triage` doesn't (account_history,
+sla_minutes_remaining), so `input` here is the union of every
+placeholder either step declares. Each step only consumes the subset
+it needs from the shared dict -- a key destined for the other step is
+present but simply unused for a given step, not an error.
+"""
+        if include_samples
+        else "\n\nOne worked example -- TicketClassifier wraps the ticketClassification\nprocess (static input, no {key} placeholders).\n"
+    )
+
+    content = f'''"""
+sample_usage.py
+
+Worked example(s) of the library entry point, as shown in docs/SETUP.md
+step 11 ("Using the library entry point directly"). Needs a real
+credential (ANTHROPIC_API_KEY env var or an ambient `claude login` OAuth
+session) to actually call a model. Run: python examples/sample_usage.py
+
+Logging is on by default -- execute() logs every turn via
+orchestration_accelerator's logging wrapper, configured from this
+project's own logger_config.json. No setup needed; trace lines land
+under ./logs/trace.log.{doc_extra}"""
+
+from project_accelerator import execute
+
+
+class TicketClassifier:
+    """Thin wrapper around execute() for the ticketClassification process (static input)."""
+
+    def __init__(self, environment: str = "local", backend: str = "agent_sdk") -> None:
+        self.environment = environment
+        self.backend = backend
+
+    def classify(self, input_text: str) -> dict:
+        return execute({{
+            "process": "ticketClassification",
+            "step": "classify",          # optional -- omit to run the full process
+            "input": input_text,
+            "environment": self.environment,  # optional -- falls back to .env's ENVIRONMENT
+            "backend": self.backend,     # "agent_sdk" | "messages_api"
+        }})
+{_SAMPLE_USAGE_TEMPLATING_CLASSES if include_samples else ""}
+
+def main() -> None:
+    print("--- Example 1: static input ---")
+    classifier = TicketClassifier()
+    result = classifier.classify("sample ticket text")
+    print(result)
+{_SAMPLE_USAGE_TEMPLATING_MAIN if include_samples else ""}
     print("Trace logged to ./logs/trace.log (see logger_config.json).")
 
 
 if __name__ == "__main__":
     main()
 '''
-    )
+    (examples_dir / "sample_usage.py").write_text(content)
 
 
 def _write_file_upload_example(dest: Path) -> None:
@@ -988,14 +1054,16 @@ def cmd_new(args: argparse.Namespace) -> None:
     dest = base / args.project_name
     dest.mkdir(parents=True, exist_ok=True)
 
-    _copy_reference_skeleton(dest)
-    _copy_sample_config(dest)
+    include_samples = getattr(args, "sample_needed", "yes") == "yes"
+
+    _copy_reference_skeleton(dest, include_samples)
+    _copy_sample_config(dest, include_samples)
     _write_env_file(dest)
     _write_logger_config(dest)
-    _write_readme(dest, args.project_name)
-    _write_howto(dest, args.project_name)
+    _write_readme(dest, args.project_name, include_samples)
+    _write_howto(dest, args.project_name, include_samples)
     _write_pipeline_runner(dest)
-    _write_sample_usage(dest)
+    _write_sample_usage(dest, include_samples)
     _write_file_upload_example(dest)
     _write_batch_processing_example(dest)
     _write_sample_test(dest)
@@ -1087,6 +1155,13 @@ def main() -> None:
         "--allow-missing-accelerators",
         action="store_true",
         help="Scaffold even if claude-auth-accelerator/ClaudeSDKLoggerAccelerator can't be found",
+    )
+    new_parser.add_argument(
+        "--sample-needed",
+        choices=["yes", "no"],
+        default="yes",
+        help="Include the templatingDemo example process and dummyDemoSkill in the scaffold "
+        "(default: yes)",
     )
     new_parser.set_defaults(venv=True, func=cmd_new)
 

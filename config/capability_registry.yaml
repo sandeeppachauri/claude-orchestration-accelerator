@@ -62,3 +62,13 @@ messages_api:
     # container.skills shape -- see .claude/rules/mcp-scope.md's sibling
     # skills note.
     - skills
+    # Prompt caching (Anthropic ephemeral cache_control breakpoints).
+    # messages_api-only: the Messages API exposes explicit, controllable
+    # cache_control blocks (type + optional ttl); the agent_sdk backend
+    # only does automatic, opaque system-prompt caching with no field to
+    # set and no TTL control, so this key is deliberately absent from
+    # agent_sdk.allowed above. This entry only gates whether a step may
+    # set cache_control at all -- the concrete {type, ttl} value is
+    # process-specific and supplied per-step in config/process_registry.yaml,
+    # not here. See .claude/rules/capability-registry.md.
+    - cache_control

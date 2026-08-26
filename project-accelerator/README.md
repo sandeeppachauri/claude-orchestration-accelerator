@@ -84,6 +84,10 @@ if one is present next to it, otherwise straight from GitHub.
 - `--allow-missing-accelerators` -- scaffold anyway even if
   `claude-auth-accelerator`/`ClaudeSDKLoggerAccelerator` fail to install
   (network unavailable, etc).
+- `--sample-needed yes|no` (default `yes`) -- whether to include the
+  `templatingDemo` example process (and its `dummyDemoSkill`) in the
+  scaffold. `no` gives a clean project with just `ticketClassification`/
+  `onboarding` and no `{{key}}`-placeholder example.
 
 See the root [`requirements.txt`](../requirements.txt) for the pip
 prereqs needed to bootstrap a brand-new environment before running `cpa

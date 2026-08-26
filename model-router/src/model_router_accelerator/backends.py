@@ -146,13 +146,25 @@ async def call_messages_api(
     When set, this switches to `client.beta.messages.create()` and builds
     that container shape (defaulting `type` to "custom" -- project-managed
     skills). Steps without `skills` keep using the stable, non-beta
-    client, unaffected."""
+    client, unaffected.
+
+    `cache_control` (e.g. `{"type": "ephemeral", "ttl": "5m"}`) is popped
+    out of `extra` and applied to the system prompt as an Anthropic
+    prompt-cache breakpoint -- `system` becomes a one-block content-array
+    instead of a plain string. The value is process-specific (supplied by
+    a process_registry.yaml step, not hardcoded here) and passed straight
+    through to the block's `cache_control` field."""
     import anthropic
 
     from auth_accelerator import build_api_credential
 
     api_key = build_api_credential(environment)
     client = anthropic.Anthropic(api_key=api_key)
+
+    cache_control = extra.pop("cache_control", None)
+    system: str | list[dict[str, Any]] = system_prompt
+    if cache_control is not None:
+        system = [{"type": "text", "text": system_prompt, "cache_control": cache_control}]
 
     try:
         if skills:
@@ -165,7 +177,7 @@ async def call_messages_api(
             response = client.beta.messages.create(
                 model=model,
                 max_tokens=max_tokens,
-                system=system_prompt,
+                system=system,
                 messages=[{"role": "user", "content": user_content}],
                 container=container,
                 **extra,
@@ -174,7 +186,7 @@ async def call_messages_api(
             response = client.messages.create(
                 model=model,
                 max_tokens=max_tokens,
-                system=system_prompt,
+                system=system,
                 messages=[{"role": "user", "content": user_content}],
                 **extra,
             )

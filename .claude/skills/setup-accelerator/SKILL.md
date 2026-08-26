@@ -2,14 +2,14 @@
 name: setup-accelerator
 description: >
   Conversationally sets up a new project on the claude-orchestration-accelerator
-  stack. Interviews the user (project name/location, venv, which process(es) to
-  configure, per-step prompt/model/fallback choices, target environment),
-  runs `cpa new` (claude-project-accelerator), writes/edits the resulting
-  process_registry.yaml and prompts/*.yaml to match the interview, optionally
-  runs a smoke test, and reports back a summary. Use when a user wants to
-  start a new project on this accelerator stack, wants a guided/interviewed
-  setup instead of hand-editing config, or asks to run `cpa new` with help
-  choosing processes/models.
+  stack. Interviews the user (project name/location, venv, whether to include
+  the templatingDemo example, which process(es) to configure, per-step
+  prompt/model/fallback choices, target environment), runs `cpa new`
+  (claude-project-accelerator), writes/edits the resulting process_registry.yaml
+  and prompts/*.yaml to match the interview, optionally runs a smoke test, and
+  reports back a summary. Use when a user wants to start a new project on this
+  accelerator stack, wants a guided/interviewed setup instead of hand-editing
+  config, or asks to run `cpa new` with help choosing processes/models.
 ---
 
 # setup-accelerator
@@ -23,18 +23,22 @@ for the mechanical work.
 
 ## What you're driving
 
-- `cpa new --project-name <name> [--venv|--no-venv]` scaffolds a directory
-  named `<name>` under the current working directory. It always copies the
-  shipped sample `process_registry.yaml` and `prompts/*.yaml`, writes a
-  `.env` with `ENVIRONMENT=local` / `DEFAULT_MODEL=claude-sonnet-5`, copies
-  the reference `.claude/` skeleton, `CLAUDE.md`, `CLAUDE.local.md`, writes
-  `pipeline/run_pipeline.py`, `tests/test_sample_pipeline.py`, `README.md`,
-  and installs all four accelerator packages (editable) into either a fresh
-  `.venv` (default, `--venv`) or the currently active environment
-  (`--no-venv`). There is no flag to pick a process at scaffold time or to
-  change the project's parent directory — the project always lands under
-  wherever `cpa new` is invoked from, so `cd` there first if the user wants
-  a specific target directory.
+- `cpa new --project-name <name> [--venv|--no-venv] [--sample-needed yes|no]`
+  scaffolds a directory named `<name>` under the current working directory.
+  It always copies the shipped sample `process_registry.yaml` and
+  `prompts/*.yaml`, writes a `.env` with `ENVIRONMENT=local` /
+  `DEFAULT_MODEL=claude-sonnet-5`, copies the reference `.claude/` skeleton,
+  `CLAUDE.md`, `CLAUDE.local.md`, writes `pipeline/run_pipeline.py`,
+  `tests/test_sample_pipeline.py`, `README.md`, and installs all four
+  accelerator packages (editable) into either a fresh `.venv` (default,
+  `--venv`) or the currently active environment (`--no-venv`).
+  `--sample-needed` (default `yes`) controls whether the `templatingDemo`
+  example process and its `dummyDemoSkill` are included alongside
+  `ticketClassification`/`onboarding` — pass `no` if the user wants a clean
+  scaffold with no `{{key}}`-placeholder example. There is no flag to pick
+  a process at scaffold time or to change the project's parent directory —
+  the project always lands under wherever `cpa new` is invoked from, so
+  `cd` there first if the user wants a specific target directory.
 - The single source of truth for step order and per-step config is
   `process_registry.yaml` at the project root, per
   `.claude/rules/process-registry.md`:
@@ -69,7 +73,11 @@ user has already volunteered several answers in their initial request).
 2. **Virtual environment.** Ask whether to create a fresh venv (`--venv`,
    the default) or install into the currently active environment
    (`--no-venv`).
-3. **Process(es) to configure.** Offer three options:
+3. **Example process.** Ask whether to include the shipped `templatingDemo`
+   example (`--sample-needed yes`, the default) or skip it for a clean
+   scaffold (`--sample-needed no`). Skip asking if the user's request
+   already implies one (e.g. "just give me a clean project" -> `no`).
+4. **Process(es) to configure.** Offer three options:
    - Reuse `ticketClassification` as-is (steps: `classify`, `extract`,
      `respond`).
    - Reuse `onboarding` as-is (steps: `welcome`, `verify`, `finalize`).
@@ -77,7 +85,7 @@ user has already volunteered several answers in their initial request).
      description, and its ordered list of step names.
    The user may pick more than one (e.g. keep `ticketClassification` and
    also define a new process); track this as a list.
-4. **Per new/customized step**, for every step in a newly defined process
+5. **Per new/customized step**, for every step in a newly defined process
    (or any shipped-sample step the user wants to override), ask:
    - Prompt: reuse one of the six shipped prompt files
      (`classify.yaml`, `extract_v2.yaml`, `classify_soa.yaml`,
@@ -89,7 +97,7 @@ user has already volunteered several answers in their initial request).
    - Fallback chain (an ordered list of model strings, possibly empty).
    Steps left untouched from a reused sample process keep their existing
    prompt/model/fallback — don't re-ask about those.
-5. **Target environment and default model.** Ask which of `local`/`dev`/`prod`
+6. **Target environment and default model.** Ask which of `local`/`dev`/`prod`
    this project's `.env` should default to, and what `DEFAULT_MODEL` should
    be (used both as the generic-default fallback and as a sensible answer
    if the user has no strong per-step model preference).
@@ -99,11 +107,11 @@ user has already volunteered several answers in their initial request).
 From the chosen target directory:
 
 ```bash
-cpa new --project-name <name> --venv      # or --no-venv per the interview
+cpa new --project-name <name> --venv --sample-needed yes   # flags per the interview
 ```
 
 If `cpa` isn't on PATH, fall back to
-`python -m project_accelerator.cli new --project-name <name> [--venv|--no-venv]`
+`python -m project_accelerator.cli new --project-name <name> [--venv|--no-venv] [--sample-needed yes|no]`
 from within an environment that has `claude-project-accelerator` installed
 (e.g. the repo's own root if this is being run from within
 `claude-orchestration-accelerator` during development).
