@@ -46,9 +46,6 @@ def _scaffold_data_dir() -> Path:
     return Path(str(importlib.resources.files("project_accelerator") / "scaffold_data"))
 
 
-_SAMPLE_PROMPT_FILES = {"ticket_triage.yaml", "escalation_decision.yaml"}
-
-
 def _copy_reference_skeleton(dest: Path, include_samples: bool = True) -> None:
     """One-time snapshot copy of the packaged reference Claude Code project
     skeleton -- not a live link. A scaffolded project owns its own copy and
@@ -76,21 +73,26 @@ def _copy_sample_config(dest: Path, include_samples: bool = True) -> None:
     config_dest.mkdir(exist_ok=True)
     if include_samples:
         shutil.copy2(data_dir / "config" / "process_registry.yaml", config_dest / "process_registry.yaml")
+        shutil.copy2(data_dir / "config" / "batch_registry.yaml", config_dest / "batch_registry.yaml")
     else:
-        import yaml
-
-        registry = yaml.safe_load((data_dir / "config" / "process_registry.yaml").read_text())
-        registry.pop("templatingDemo", None)
-        (config_dest / "process_registry.yaml").write_text(yaml.safe_dump(registry, sort_keys=False))
-    shutil.copy2(data_dir / "config" / "batch_registry.yaml", config_dest / "batch_registry.yaml")
+        (config_dest / "process_registry.yaml").write_text(
+            "# No processes configured yet -- scaffolded with --sample-needed no.\n"
+            "# Add your own process here; see .claude/rules/process-registry.md for the schema.\n"
+            "{}\n"
+        )
+        (config_dest / "batch_registry.yaml").write_text(
+            "# No batch jobs configured yet -- scaffolded with --sample-needed no.\n"
+            "# Add an entry here once config/process_registry.yaml has a process to batch;\n"
+            "# see .claude/rules/batch-registry.md for the schema.\n"
+            "{}\n"
+        )
     shutil.copy2(data_dir / "config" / "capability_registry.yaml", config_dest / "capability_registry.yaml")
     shutil.copy2(data_dir / "config" / "guardrails.yaml", config_dest / "guardrails.yaml")
     prompts_dest = dest / "prompts"
     prompts_dest.mkdir(exist_ok=True)
-    for prompt_file in (data_dir / "prompts").glob("*.yaml"):
-        if not include_samples and prompt_file.name in _SAMPLE_PROMPT_FILES:
-            continue
-        shutil.copy2(prompt_file, prompts_dest / prompt_file.name)
+    if include_samples:
+        for prompt_file in (data_dir / "prompts").glob("*.yaml"):
+            shutil.copy2(prompt_file, prompts_dest / prompt_file.name)
 
 
 def _write_env_file(dest: Path) -> None:
@@ -120,14 +122,12 @@ demonstrating runtime `{{key}}` placeholders -- see "Runtime input" below).
 Edit `config/process_registry.yaml` and `prompts/*.yaml` to add your own, or
 remove the samples once you've replaced them."""
         if include_samples
-        else """Two sample processes ship out of the box: `ticketClassification`
-(`classify` -> `extract` -> `respond`) and `onboarding` (`welcome` ->
-`verify` -> `finalize`). Edit `config/process_registry.yaml` and
-`prompts/*.yaml` to add your own, or remove the samples once you've
-replaced them. (Scaffolded with `--sample-needed no`, so the
-`templatingDemo` runtime-placeholder example was omitted -- see
-`.claude/rules/process-registry.md`'s "Runtime input & {{key}} placeholders"
-section for that pattern if you need it later.)"""
+        else """Scaffolded with `--sample-needed no`: `config/process_registry.yaml`
+and `prompts/` ship empty, and no `examples/` directory is generated.
+Add your own process to `config/process_registry.yaml` and a matching
+prompt under `prompts/*.yaml` -- see `.claude/rules/process-registry.md`
+for the schema, and that same doc's "Runtime input & {key} placeholders"
+section if you need `{key}`-templated prompts."""
     )
     runtime_input_section = (
         """
@@ -159,6 +159,53 @@ See `docs/HOWTO.md` for a full walkthrough and runnable snippets.
         if include_samples
         else ""
     )
+    batch_examples_note = (
+        " Runnable examples: `examples/file_upload_example.py`,\n"
+        "`examples/batch_processing_example.py`."
+        if include_samples
+        else ""
+    )
+    tests_section = (
+        """```bash
+pytest tests/test_sample_pipeline.py
+```"""
+        if include_samples
+        else """```bash
+pytest tests/test_sample_pipeline.py
+```
+
+Scaffolded with `--sample-needed no`, so this is a placeholder test with
+no assertions against a sample process -- replace it once you've added a
+process to `config/process_registry.yaml`."""
+    )
+    structure_examples_lines = (
+        """- `examples/sample_usage.py` -- sample `TicketClassifier` class wrapping
+  `execute()` the way docs/SETUP.md step 11 shows it used directly.
+- `config/batch_registry.yaml` -- maps a `batch_id` to a `config/process_registry.yaml`
+  process for batch jobs (see "File upload and batch processing" below).
+- `examples/file_upload_example.py` / `examples/batch_processing_example.py`
+  -- sample classes for `upload_file()` and `execute_batch()`.
+"""
+        if include_samples
+        else """- `config/batch_registry.yaml` -- maps a `batch_id` to a `config/process_registry.yaml`
+  process for batch jobs; ships empty (`--sample-needed no`) -- add an
+  entry once you have a process to batch.
+"""
+    )
+    run_example = (
+        """result = execute({
+    "process": "ticketClassification",  # any process defined in config/process_registry.yaml
+    "input": "some ticket text",
+    "backend": "agent_sdk",             # "agent_sdk" | "messages_api"
+})"""
+        if include_samples
+        else """result = execute({
+    "process": "yourProcess",  # a process you've added to config/process_registry.yaml
+    "input": "some input text",
+    "backend": "agent_sdk",    # "agent_sdk" | "messages_api"
+})"""
+    )
+    env_example_process = "ticketClassification" if include_samples else "yourProcess"
     (dest / "README.md").write_text(
         f"""# {project_name}
 
@@ -174,13 +221,7 @@ Scaffolded by `cpa new --project-name {project_name}` from
   keys are checked against this before the model call.
 - `prompts/*.yaml` -- prompt templates referenced by the registry.
 - `pipeline/run_pipeline.py` -- sample script driving `execute()`.
-- `examples/sample_usage.py` -- sample `TicketClassifier` class wrapping
-  `execute()` the way docs/SETUP.md step 11 shows it used directly.
-- `config/batch_registry.yaml` -- maps a `batch_id` to a `config/process_registry.yaml`
-  process for batch jobs (see "File upload and batch processing" below).
-- `examples/file_upload_example.py` / `examples/batch_processing_example.py`
-  -- sample classes for `upload_file()` and `execute_batch()`.
-- `.env` -- `ENVIRONMENT` (default environment) and `DEFAULT_MODEL`
+{structure_examples_lines}- `.env` -- `ENVIRONMENT` (default environment) and `DEFAULT_MODEL`
   (fallback model when a `(process, step)` isn't in the registry).
 - `logger_config.json` -- default logging wrapper config.
 - `tests/test_sample_pipeline.py` -- smoke test for the sample process.
@@ -192,11 +233,7 @@ Scaffolded by `cpa new --project-name {project_name}` from
 ```python
 from project_accelerator import execute
 
-result = execute({{
-    "process": "ticketClassification",  # any process defined in config/process_registry.yaml
-    "input": "some ticket text",
-    "backend": "agent_sdk",             # "agent_sdk" | "messages_api"
-}})
+{run_example}
 ```
 
 The payload's `"process"` (and optional `"step"`) select what to run;
@@ -214,11 +251,11 @@ which credential provider `claude-auth-accelerator` resolves:
 | anything else (`staging`, `prod`, ...) | `ANTHROPIC_API_KEY` (console key) | `agent_sdk` or `messages_api` |
 
 ```python
-execute({{"process": "ticketClassification", "input": "...",
+execute({{"process": {env_example_process!r}, "input": "...",
          "environment": "local", "backend": "agent_sdk"}})      # OAuth session
-execute({{"process": "ticketClassification", "input": "...",
+execute({{"process": {env_example_process!r}, "input": "...",
          "environment": "staging", "backend": "messages_api"}})  # console key
-execute({{"process": "ticketClassification", "input": "...",
+execute({{"process": {env_example_process!r}, "input": "...",
          "environment": "prod", "backend": "agent_sdk"}})        # console key
 ```
 
@@ -261,8 +298,8 @@ from project_accelerator import upload_file, execute_batch
 file_id = upload_file("invoice.pdf", backend="messages_api")
 
 result = execute_batch({{
-    "batch_id": "ticketClassificationBatch_01",  # see config/batch_registry.yaml
-    "inputs": ["ticket text 1", "ticket text 2"],
+    "batch_id": "yourBatchJob",  # see config/batch_registry.yaml
+    "inputs": ["item text 1", "item text 2"],
 }})
 ```
 
@@ -272,9 +309,7 @@ every item in `"inputs"` as one real Anthropic Message Batches API job
 (not a loop over `execute()`), polls until done, then validates each
 result the same way `execute()` does. `config/batch_registry.yaml` maps a
 `batch_id` to a `config/process_registry.yaml` process `id` (+ optional `step`)
--- see `.claude/rules/batch-registry.md` for the schema. Runnable
-examples: `examples/file_upload_example.py`,
-`examples/batch_processing_example.py`.
+-- see `.claude/rules/batch-registry.md` for the schema.{batch_examples_note}
 
 ### `config/process_registry.yaml` vs `config/batch_registry.yaml` -- what goes where
 
@@ -290,9 +325,7 @@ reference resolves to.
 
 ## Tests
 
-```bash
-pytest tests/test_sample_pipeline.py
-```
+{tests_section}
 
 See `docs/HOWTO.md` for a file-by-file breakdown and getting-started steps.
 """
@@ -378,27 +411,20 @@ Three shipped examples, simplest to most complex:
 """
         if include_samples
         else """
-## Runtime input: `{{key}}` placeholders
+## Runtime input: `{key}` placeholders
 
-Prompts under `prompts/` may declare `{{key}}` placeholders in
+Prompts under `prompts/` may declare `{key}` placeholders in
 `system_prompt`/`user_prompt`, filled at call time from `execute()`'s
 payload `"input"` (which must then be a dict, not a plain string). This
 scaffold was created with `--sample-needed no`, so the worked
 `templatingDemo` example demonstrating this is not included here -- see
-`.claude/rules/process-registry.md`'s "Runtime input & {{key}} placeholders"
+`.claude/rules/process-registry.md`'s "Runtime input & {key} placeholders"
 section for the full pattern.
 """
     )
 
-    (docs_dest / "HOWTO.md").write_text(
-        f"""# How to use {project_name}
-
-What each generated file is for, and how to get from a fresh checkout to
-a running pipeline.
-
-## Getting started
-
-1. Create/activate a virtualenv and make sure the four accelerator
+    getting_started_steps = (
+        """1. Create/activate a virtualenv and make sure the four accelerator
    packages are installed into it (`cpa new` already did this for the
    environment you scaffolded into -- re-run it with `--python` pointed
    at a different interpreter if you need another one).
@@ -409,7 +435,75 @@ a running pipeline.
 4. Run the sample pipeline end to end:
    `python pipeline/run_pipeline.py ticketClassification "sample ticket text"`.
 5. Open `config/process_registry.yaml` and `prompts/*.yaml` and start replacing
-   the sample `ticketClassification`/`onboarding` processes with your own.
+   the sample `ticketClassification`/`onboarding` processes with your own."""
+        if include_samples
+        else """1. Create/activate a virtualenv and make sure the four accelerator
+   packages are installed into it (`cpa new` already did this for the
+   environment you scaffolded into -- re-run it with `--python` pointed
+   at a different interpreter if you need another one).
+2. Set a credential: `ANTHROPIC_API_KEY` env var, or run `claude login`
+   for an ambient OAuth session. Not needed for `pytest` (everything is
+   mocked) -- only for actually calling a model.
+3. Open `config/process_registry.yaml` (ships empty) and add your first
+   process, then add a matching prompt file under `prompts/*.yaml` -- see
+   `.claude/rules/process-registry.md` for the schema.
+4. Run `pytest tests/test_sample_pipeline.py` -- it's a placeholder until
+   you replace it with a real assertion against your own process.
+5. Run your pipeline end to end:
+   `python pipeline/run_pipeline.py <yourProcess> "some input text"`."""
+    )
+
+    examples_file_entries = (
+        """- **`examples/sample_usage.py`** -- a `TicketClassifier` class showing
+  `execute()` used directly from Python (as opposed to the CLI-style
+  `run_pipeline.py`), including the optional `"step"` and `"environment"`
+  keys. Copy this pattern when you need to call a process from your own
+  application code.
+
+"""
+        if include_samples
+        else ""
+    )
+    batch_registry_note = (
+        ""
+        if include_samples
+        else " Ships empty (`--sample-needed no`) -- add an entry once\n  `config/process_registry.yaml` has a process you want to batch."
+    )
+    batch_example_entries = (
+        """
+- **`examples/file_upload_example.py`** -- a `DocumentUploader` class
+  showing `project_accelerator.upload_file()` used directly, then
+  running the uploaded file's reference through `execute()`.
+
+- **`examples/batch_processing_example.py`** -- a `BatchTicketClassifier`
+  class showing `project_accelerator.execute_batch()` used directly,
+  wired to the `ticketClassificationBatch_01` entry in
+  `config/batch_registry.yaml`.
+"""
+        if include_samples
+        else ""
+    )
+    test_file_entry = (
+        """a smoke test for the sample
+  process that mocks the model call, so it runs without any credential.
+  Exists as a template for testing your own processes the same way."""
+        if include_samples
+        else """a placeholder test (scaffolded with
+  `--sample-needed no`, so there's no sample process to assert against
+  yet). Replace it with a real assertion once you've added a process to
+  `config/process_registry.yaml`."""
+    )
+
+    env_example_process = "ticketClassification" if include_samples else "yourProcess"
+    (docs_dest / "HOWTO.md").write_text(
+        f"""# How to use {project_name}
+
+What each generated file is for, and how to get from a fresh checkout to
+a running pipeline.
+
+## Getting started
+
+{getting_started_steps}
 
 ## File-by-file
 
@@ -484,17 +578,17 @@ just a label:
 
 ```python
 # local -- no ANTHROPIC_API_KEY needed as long as `claude login` has run
-execute({{"process": "ticketClassification", "input": "...",
+execute({{"process": {env_example_process!r}, "input": "...",
          "environment": "local", "backend": "agent_sdk"}})
 
 # staging -- ANTHROPIC_API_KEY set in staging's own .env/secret store
-execute({{"process": "ticketClassification", "input": "...",
+execute({{"process": {env_example_process!r}, "input": "...",
          "environment": "staging", "backend": "agent_sdk"}})
-execute({{"process": "ticketClassification", "input": "...",
+execute({{"process": {env_example_process!r}, "input": "...",
          "environment": "staging", "backend": "messages_api"}})
 
 # prod -- ANTHROPIC_API_KEY set in prod's own .env/secret store
-execute({{"process": "ticketClassification", "input": "...",
+execute({{"process": {env_example_process!r}, "input": "...",
          "environment": "prod", "backend": "messages_api"}})
 ```
 
@@ -515,31 +609,14 @@ call, relying on the payload -> `.env` -> `"local"` fallback.
   fastest way to exercise a whole process from the command line:
   `python pipeline/run_pipeline.py <process> "<input text>"`.
 
-- **`examples/sample_usage.py`** -- a `TicketClassifier` class showing
-  `execute()` used directly from Python (as opposed to the CLI-style
-  `run_pipeline.py`), including the optional `"step"` and `"environment"`
-  keys. Copy this pattern when you need to call a process from your own
-  application code.
-
-- **`config/batch_registry.yaml`** -- maps a `batch_id` to a
+{examples_file_entries}- **`config/batch_registry.yaml`** -- maps a `batch_id` to a
   `config/process_registry.yaml` process `id` (+ optional `step`), plus
   batch-specific `poll_interval_seconds`/`poll_timeout_seconds`. See
   `.claude/rules/batch-registry.md` for the full schema. `execute_batch()`
   reads this to know which process/step/model runs across every item in
-  a batch job.
-
-- **`examples/file_upload_example.py`** -- a `DocumentUploader` class
-  showing `project_accelerator.upload_file()` used directly, then
-  running the uploaded file's reference through `execute()`.
-
-- **`examples/batch_processing_example.py`** -- a `BatchTicketClassifier`
-  class showing `project_accelerator.execute_batch()` used directly,
-  wired to the `ticketClassificationBatch_01` entry in
-  `config/batch_registry.yaml`.
-
-- **`tests/test_sample_pipeline.py`** -- a smoke test for the sample
-  process that mocks the model call, so it runs without any credential.
-  Exists as a template for testing your own processes the same way.
+  a batch job.{batch_registry_note}
+{batch_example_entries}
+- **`tests/test_sample_pipeline.py`** -- {test_file_entry}
 
 - **`README.md`** -- short orientation: what got scaffolded and the
   minimal run/test commands. This file (`docs/HOWTO.md`) is the longer,
@@ -709,6 +786,8 @@ _SAMPLE_USAGE_TEMPLATING_MAIN = '''
 
 
 def _write_sample_usage(dest: Path, include_samples: bool = True) -> None:
+    if not include_samples:
+        return
     examples_dir = dest / "examples"
     examples_dir.mkdir(exist_ok=True)
 
@@ -888,10 +967,43 @@ if __name__ == "__main__":
     )
 
 
-def _write_sample_test(dest: Path) -> None:
+def _write_sample_test(dest: Path, include_samples: bool = True) -> None:
     tests_dir = dest / "tests"
     tests_dir.mkdir(exist_ok=True)
     (tests_dir / "__init__.py").write_text("")
+
+    if not include_samples:
+        (tests_dir / "test_sample_pipeline.py").write_text(
+            '''"""
+test_sample_pipeline.py
+
+Placeholder test -- scaffolded with `--sample-needed no`, so
+config/process_registry.yaml ships empty and there is no sample process
+to exercise here. Once you've added a process to
+config/process_registry.yaml, replace this with a real test that calls
+execute() and asserts on the result (see docs/HOWTO.md and
+.claude/rules/process-registry.md).
+"""
+
+import pytest
+
+
+def test_project_accelerator_importable():
+    """Trivial placeholder -- proves the scaffolded environment can
+    import the library entry point. Replace with a real assertion once a
+    process is configured."""
+    from project_accelerator import execute  # noqa: F401
+
+
+def test_no_sample_process_configured():
+    pytest.skip(
+        "no sample process configured -- see config/process_registry.yaml "
+        "and replace this test once you've added one"
+    )
+'''
+        )
+        return
+
     (tests_dir / "test_sample_pipeline.py").write_text(
         '''"""
 test_sample_pipeline.py
@@ -1070,7 +1182,7 @@ def cmd_new(args: argparse.Namespace) -> None:
     _write_sample_usage(dest, include_samples)
     _write_file_upload_example(dest, include_samples)
     _write_batch_processing_example(dest, include_samples)
-    _write_sample_test(dest)
+    _write_sample_test(dest, include_samples)
 
     if args.python:
         python_exe = str(Path(args.python).expanduser().resolve())
@@ -1117,12 +1229,13 @@ def cmd_new(args: argparse.Namespace) -> None:
 
     print(f"\nScaffolded project '{args.project_name}' at {dest}")
     print("Created:")
-    print("  prompts/*.yaml, config/process_registry.yaml, config/capability_registry.yaml, config/batch_registry.yaml, config/guardrails.yaml, .env, logger_config.json")
     if include_samples:
+        print("  prompts/*.yaml, config/process_registry.yaml, config/capability_registry.yaml, config/batch_registry.yaml, config/guardrails.yaml, .env, logger_config.json")
         print("  pipeline/run_pipeline.py, examples/sample_usage.py, tests/test_sample_pipeline.py")
         print("  examples/file_upload_example.py, examples/batch_processing_example.py")
     else:
-        print("  pipeline/run_pipeline.py, tests/test_sample_pipeline.py")
+        print("  prompts/ (empty), config/process_registry.yaml (empty), config/capability_registry.yaml, config/batch_registry.yaml (empty), config/guardrails.yaml, .env, logger_config.json")
+        print("  pipeline/run_pipeline.py, tests/test_sample_pipeline.py (placeholder, no examples/ dir)")
     print("  README.md, docs/HOWTO.md")
     print("  CLAUDE.local.md, .claude/ (reference skeleton, incl. .claude/CLAUDE.md)")
     print("  .mcp.json, docs/architecture.md, scripts/smoke_test.sh")
