@@ -786,7 +786,9 @@ if __name__ == "__main__":
     (examples_dir / "sample_usage.py").write_text(content)
 
 
-def _write_file_upload_example(dest: Path) -> None:
+def _write_file_upload_example(dest: Path, include_samples: bool = True) -> None:
+    if not include_samples:
+        return
     examples_dir = dest / "examples"
     examples_dir.mkdir(exist_ok=True)
     (examples_dir / "file_upload_example.py").write_text(
@@ -838,7 +840,9 @@ if __name__ == "__main__":
     )
 
 
-def _write_batch_processing_example(dest: Path) -> None:
+def _write_batch_processing_example(dest: Path, include_samples: bool = True) -> None:
+    if not include_samples:
+        return
     examples_dir = dest / "examples"
     examples_dir.mkdir(exist_ok=True)
     (examples_dir / "batch_processing_example.py").write_text(
@@ -1064,8 +1068,8 @@ def cmd_new(args: argparse.Namespace) -> None:
     _write_howto(dest, args.project_name, include_samples)
     _write_pipeline_runner(dest)
     _write_sample_usage(dest, include_samples)
-    _write_file_upload_example(dest)
-    _write_batch_processing_example(dest)
+    _write_file_upload_example(dest, include_samples)
+    _write_batch_processing_example(dest, include_samples)
     _write_sample_test(dest)
 
     if args.python:
@@ -1114,8 +1118,11 @@ def cmd_new(args: argparse.Namespace) -> None:
     print(f"\nScaffolded project '{args.project_name}' at {dest}")
     print("Created:")
     print("  prompts/*.yaml, config/process_registry.yaml, config/capability_registry.yaml, config/batch_registry.yaml, config/guardrails.yaml, .env, logger_config.json")
-    print("  pipeline/run_pipeline.py, examples/sample_usage.py, tests/test_sample_pipeline.py")
-    print("  examples/file_upload_example.py, examples/batch_processing_example.py")
+    if include_samples:
+        print("  pipeline/run_pipeline.py, examples/sample_usage.py, tests/test_sample_pipeline.py")
+        print("  examples/file_upload_example.py, examples/batch_processing_example.py")
+    else:
+        print("  pipeline/run_pipeline.py, tests/test_sample_pipeline.py")
     print("  README.md, docs/HOWTO.md")
     print("  CLAUDE.local.md, .claude/ (reference skeleton, incl. .claude/CLAUDE.md)")
     print("  .mcp.json, docs/architecture.md, scripts/smoke_test.sh")

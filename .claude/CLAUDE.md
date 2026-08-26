@@ -94,3 +94,6 @@ repo's own `config/` schemas, rule docs, and worked example
 `sh project-accelerator/scripts/install-git-hooks.sh` (once per clone)
 installs a pre-commit hook that runs it automatically whenever a commit
 touches `config/*.yaml`, `.claude/rules/*.md`, or scaffold_data itself.
+
+## Keeping the scaffold in sync
+- you will not be starting any change until i confirmed you when we are in plan mode
