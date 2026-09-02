@@ -1,6 +1,7 @@
 ticketClassification:
   id: ticketClassification_01
   description: ticketClassification description
+  # context_mode: threaded  -- default when omitted (see .claude/rules/context-mode.md)
   steps: [classify, extract, respond]
   classify:
     prompt: classify.yaml
@@ -26,6 +27,7 @@ templatingDemo:
     them). `escalate` is example 3 (complex: placeholders in both
     system_prompt and user_prompt, plus every capability-passthrough key
     in one place).
+  # context_mode: threaded  -- default when omitted (see .claude/rules/context-mode.md)
   steps: [triage, escalate]
   triage:
     prompt: ticket_triage.yaml
@@ -100,9 +102,68 @@ templatingDemo:
     # inactive until opted in:
     # skills: [dummyDemoSkill]
 
+supportSession:
+  id: supportSession_01
+  description: >
+    Demonstrates context_mode: session (see .claude/rules/context-mode.md)
+    -- a real, accumulating agent_sdk conversation across steps, instead
+    of the default context_mode: threaded's {{<stepName>_output}}
+    text-templating. `intake` and `diagnose` share one open
+    ClaudeSDKClient for this whole execute() call: `diagnose` sees
+    `intake`'s turn as real conversation history, with no
+    {{intake_output}} placeholder needed. Only works with
+    backend: agent_sdk -- messages_api has no native session concept.
+  context_mode: session
+  trimming:
+    strategy: turn_count
+    max_turns: 20
+  session_store:
+    backend: memory
+  steps: [intake, diagnose]
+  intake:
+    prompt: support_intake.yaml
+    model: claude-haiku-4-5-20251001
+    fallback: [claude-haiku-4-5-20251001]
+    max_turns: 1
+  diagnose:
+    prompt: support_diagnose.yaml
+    model: claude-haiku-4-5-20251001
+    fallback: [claude-haiku-4-5-20251001]
+    max_turns: 1
+
+fewshotLabeling:
+  id: fewshotLabeling_01
+  description: >
+    Demonstrates assistant_prompt (see .claude/rules/process-registry.md's
+    "Runtime input & {{key}}" section) -- a canned prior assistant turn
+    seeded before the real user turn, for few-shot priming.
+    messages_api-only.
+  # context_mode: threaded  -- default when omitted (see .claude/rules/context-mode.md)
+  steps: [label]
+  label:
+    prompt: fewshot_seed.yaml
+    model: claude-haiku-4-5-20251001
+    fallback: [claude-haiku-4-5-20251001]
+
+streamingDemo:
+  id: streamingDemo_01
+  description: >
+    Demonstrates stream: true (see .claude/rules/streaming.md) -- chunks
+    emitted to execute()'s payload["on_chunk"] callback as they arrive,
+    instead of only returning the fully-buffered text after the whole
+    turn completes.
+  # context_mode: threaded  -- default when omitted (see .claude/rules/context-mode.md)
+  steps: [narrate]
+  narrate:
+    prompt: streaming_narrate.yaml
+    model: claude-haiku-4-5-20251001
+    fallback: [claude-haiku-4-5-20251001]
+    stream: true
+
 onboarding:
   id: onboarding_01
   description: onboarding description
+  # context_mode: threaded  -- default when omitted (see .claude/rules/context-mode.md)
   steps: [welcome, verify, finalize]
   welcome:
     prompt: welcome.yaml

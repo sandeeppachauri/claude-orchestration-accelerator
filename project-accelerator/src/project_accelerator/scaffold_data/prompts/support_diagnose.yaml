@@ -1,0 +1,25 @@
+step: diagnose
+version: 1
+scope:
+  in_bounds:
+    - "Use the conversation history from the intake turn to narrow down a likely cause"
+  out_of_bounds:
+    - "Do not restart the conversation from scratch"
+
+format:
+  type: text
+
+constraints:
+  - "Never restart the conversation or re-ask the intake question"
+  - "Propose exactly one next diagnostic step"
+
+system_prompt: |
+  You are the same support agent continuing this conversation -- you
+  already have the customer's initial issue and your own clarifying
+  question from the previous turn in your context (context_mode: session
+  keeps this conversation open across steps, so you do not need any
+  step-output templating to see it).
+
+  SCOPE: use what you already know from this conversation to narrow down
+  a likely cause and propose a next diagnostic step. Do not restart the
+  conversation from scratch or re-ask the same question.

@@ -9,7 +9,7 @@ itself.
 ```python
 from model_router_accelerator import execute_with_fallback
 
-text = await execute_with_fallback(
+result = await execute_with_fallback(
     model="claude-haiku-4-5-20251001",
     fallback=["claude-sonnet-5", "claude-opus-4-8"],
     system_prompt="You are a support-ticket classifier...",
@@ -17,11 +17,18 @@ text = await execute_with_fallback(
     backend="agent_sdk",          # or "messages_api"
     environment="local",
 )
+text = result["text"]
 ```
+
+Returns a structured dict (`text`, `model_used`, `usage`, `stop_reason`,
+`request_id`, `latency_ms`, `session_id`, `tool_calls`), not a bare
+string -- `session_id`/`tool_calls` are agent_sdk-only,
+`request_id` is messages_api-only.
 
 On a rate-limit/overload error from `model`, each `fallback` entry is
 tried in order (with basic backoff) until one succeeds or the chain is
-exhausted (`FallbackChainExhaustedError`).
+exhausted (`FallbackChainExhaustedError`). A fallback transition is
+logged at `Scope.WARNING` before the eventual successful call.
 
 Backend selection is purely mechanical — the caller decides which backend
 via the `backend` parameter; this package never auto-detects or infers

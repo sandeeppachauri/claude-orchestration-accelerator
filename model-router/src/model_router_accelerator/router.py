@@ -20,6 +20,32 @@ from .exceptions import FallbackChainExhaustedError, RateLimitOrOverloadError
 VALID_BACKENDS = frozenset(BACKENDS.keys())
 
 
+async def _log_fallback_transition(
+    session_id: str, fallback_from: str, fallback_to: str, reason: str
+) -> None:
+    """Logs a WARNING-scope event when the chain falls back from one model
+    to the next, before the eventual successful call's own MODEL_CALL_END
+    entry -- otherwise a fallback mid-chain is invisible even once the
+    final model succeeds. Best-effort, mirrors core.py's
+    _log_best_effort() -- a tracing backend outage must never take down
+    the fallback chain itself."""
+    try:
+        from orchestration_accelerator.logging import log
+
+        await log(
+            "WARNING",
+            session_id,
+            0,
+            payload={
+                "fallback_from": fallback_from,
+                "fallback_to": fallback_to,
+                "reason": reason,
+            },
+        )
+    except Exception:
+        pass
+
+
 async def execute_with_fallback(
     *,
     model: str,
@@ -29,13 +55,18 @@ async def execute_with_fallback(
     backend: str,
     environment: str = "local",
     base_backoff_seconds: float = 0.1,
+    session_id: str = "",
     **backend_kwargs: Any,
-) -> str:
+) -> dict[str, Any]:
     """Tries `model`, then each entry in `fallback` in order, on a
-    RateLimitOrOverloadError. Returns the first successful result.
-    Raises FallbackChainExhaustedError if every entry fails that way, or
-    propagates any other exception immediately (non-rate-limit errors are
-    not retried across the chain)."""
+    RateLimitOrOverloadError. Returns the first successful backend
+    call's structured result dict (`text`, `model_used`, `usage`,
+    `stop_reason`, `request_id`, `latency_ms`, `session_id`,
+    `tool_calls`) unchanged -- this function is a pure pass-through of
+    whatever the backend call returns, it does not itself build the
+    result shape. Raises FallbackChainExhaustedError if every entry
+    fails that way, or propagates any other exception immediately
+    (non-rate-limit errors are not retried across the chain)."""
     if backend not in VALID_BACKENDS:
         raise ValueError(
             friendly_error(
@@ -61,6 +92,8 @@ async def execute_with_fallback(
         except RateLimitOrOverloadError as exc:
             last_error = exc
             if position < len(chain) - 1:
+                next_model = chain[position + 1]
+                await _log_fallback_transition(session_id, candidate_model, next_model, str(exc))
                 await asyncio.sleep(base_backoff_seconds * (2**position))
             continue
 

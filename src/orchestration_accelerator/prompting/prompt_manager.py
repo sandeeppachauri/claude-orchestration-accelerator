@@ -64,6 +64,7 @@ class PromptConfig:
     constraints: list[str]
     system_prompt: str
     user_prompt: str | None = None
+    assistant_prompt: str | None = None
 
     def describe(self) -> str:
         """Human-readable summary -- useful for logging which contract was
@@ -130,6 +131,7 @@ class PromptManager:
             constraints=raw["constraints"],
             system_prompt=raw["system_prompt"],
             user_prompt=raw.get("user_prompt"),
+            assistant_prompt=raw.get("assistant_prompt"),
         )
 
     def has_placeholders(self, step: str, filename: str | None = None) -> bool:
@@ -143,37 +145,47 @@ class PromptManager:
         placeholders = set(_PLACEHOLDER_RE.findall(cfg.system_prompt))
         if cfg.user_prompt is not None:
             placeholders |= set(_PLACEHOLDER_RE.findall(cfg.user_prompt))
+        if cfg.assistant_prompt is not None:
+            placeholders |= set(_PLACEHOLDER_RE.findall(cfg.assistant_prompt))
         return bool(placeholders)
 
     def render(
         self, step: str, values: dict[str, Any] | str, filename: str | None = None
-    ) -> tuple[PromptConfig, str, str]:
+    ) -> tuple[PromptConfig, str, str | None, str]:
         """Load a step's prompt config and resolve `{{key}}` placeholders
-        in `system_prompt`/`user_prompt` against `values`.
+        in `system_prompt`/`user_prompt`/`assistant_prompt` against
+        `values`.
 
         `values` is either:
           - a plain string: legacy path. The prompt must contain NO
             placeholders (any `{{key}}` present is a config/call-site
             mismatch, raised immediately). Returned user content is
-            `values` verbatim; `system_prompt` is used as-is.
+            `values` verbatim; `system_prompt`/`assistant_prompt` are
+            used as-is.
           - a dict of `{key: value}`: template path. The step's
             `user_prompt` field is then REQUIRED (there is nothing else
-            to send as the user turn). Every `{{key}}` in `system_prompt`
-            and `user_prompt` must have a matching dict key, else
-            `PromptValidationError` is raised so config and call site
-            can never silently drift apart. Extra dict keys not used by
-            this step's placeholders are allowed and ignored -- a
-            multi-step run shares one flat `input` dict across steps
-            with different placeholder needs, so a key meant for another
-            step must not fail this one.
+            to send as the user turn). Every `{{key}}` in
+            `system_prompt`/`user_prompt`/`assistant_prompt` must have a
+            matching dict key, else `PromptValidationError` is raised so
+            config and call site can never silently drift apart. Extra
+            dict keys not used by this step's placeholders are allowed
+            and ignored -- a multi-step run shares one flat `input` dict
+            across steps with different placeholder needs, so a key
+            meant for another step must not fail this one.
 
-        Returns (cfg, rendered_system_prompt, rendered_user_content).
+        Returns (cfg, rendered_system_prompt, rendered_assistant_content,
+        rendered_user_content). `rendered_assistant_content` is `None`
+        when the prompt YAML has no `assistant_prompt` field -- callers
+        must treat a `None` assistant slot as "no seed turn," not build
+        a message array entry for it.
         """
         cfg = self.get(step, filename=filename)
 
         placeholders = set(_PLACEHOLDER_RE.findall(cfg.system_prompt))
         if cfg.user_prompt is not None:
             placeholders |= set(_PLACEHOLDER_RE.findall(cfg.user_prompt))
+        if cfg.assistant_prompt is not None:
+            placeholders |= set(_PLACEHOLDER_RE.findall(cfg.assistant_prompt))
 
         if isinstance(values, str):
             if placeholders:
@@ -188,7 +200,7 @@ class PromptManager:
                         f"every placeholder instead.",
                     )
                 )
-            return cfg, cfg.system_prompt, values
+            return cfg, cfg.system_prompt, cfg.assistant_prompt, values
 
         # values is a dict from here on.
         if not placeholders:
@@ -227,7 +239,8 @@ class PromptManager:
         def _sub(text: str) -> str:
             return _PLACEHOLDER_RE.sub(lambda m: str(values[m.group(1)]), text)
 
-        return cfg, _sub(cfg.system_prompt), _sub(cfg.user_prompt)
+        rendered_assistant = _sub(cfg.assistant_prompt) if cfg.assistant_prompt is not None else None
+        return cfg, _sub(cfg.system_prompt), rendered_assistant, _sub(cfg.user_prompt)
 
     def validate_output(self, step: str, cfg: PromptConfig, output: str) -> Any:
         """

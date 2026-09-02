@@ -147,13 +147,20 @@ def execute_batch(
     requests = []
     for i, item in enumerate(inputs):
         custom_id = f"{batch_id}-{i}"
+        assistant_prompt = None
         if prompt_file is not None:
-            cfg, system_prompt, user_content = pm.render(step_name, item, filename=prompt_file)
+            cfg, system_prompt, assistant_prompt, user_content = pm.render(
+                step_name, item, filename=prompt_file
+            )
             configs[custom_id] = cfg
         else:
             system_prompt = step_config.get("system_prompt", "You are a helpful assistant.")
             user_content = item
             configs[custom_id] = None
+        batch_messages: list[dict[str, Any]] = []
+        if assistant_prompt is not None:
+            batch_messages.append({"role": "assistant", "content": assistant_prompt})
+        batch_messages.append({"role": "user", "content": user_content})
         requests.append(
             {
                 "custom_id": custom_id,
@@ -161,7 +168,7 @@ def execute_batch(
                     "model": model,
                     "max_tokens": max_tokens,
                     "system": system_prompt,
-                    "messages": [{"role": "user", "content": user_content}],
+                    "messages": batch_messages,
                     **capabilities,
                 },
             }

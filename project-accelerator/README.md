@@ -24,6 +24,13 @@ configuration when undefined), calls the model with fallback via the
 model router, validates output against the prompt's format contract, and
 logs the turn.
 
+`result` is `{step_name: {output, model_used, stop_reason, usage,
+tool_calls, request_id, latency_ms}, ...}` -- `output` is the validated
+text (what a bare `results[step_name]` string carried before this
+field was added); the rest is metadata about that step's model call
+(`tool_calls`/`session_id` agent_sdk-only, `request_id`
+messages_api-only). See `../CHANGELOG.md` for the migration note.
+
 The payload's `"step"` field only narrows to one step -- it never
 reorders/subsets a process's `steps` list. `process_registry.yaml` is the
 only place step flow is controlled.

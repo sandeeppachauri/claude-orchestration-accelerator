@@ -29,9 +29,9 @@ instead of ever emitting a final text turn, leaving `raw_output` empty.
 
 ```yaml
 agent_sdk:
-  allowed: [max_turns, thinking, max_thinking_tokens, effort, permission_mode, fallback_model, tools, disallowed_tools, mcp_servers, allowed_tools, guardrails, skills]
+  allowed: [max_turns, thinking, max_thinking_tokens, effort, permission_mode, fallback_model, tools, disallowed_tools, mcp_servers, allowed_tools, guardrails, skills, resume, session_id, stream]
 messages_api:
-  allowed: [temperature, top_p, max_tokens, thinking, stop_sequences, skills, cache_control]
+  allowed: [temperature, top_p, max_tokens, thinking, stop_sequences, skills, cache_control, stream]
 ```
 
 Rules:
@@ -64,10 +64,18 @@ Rules:
   matching backend's `allowed` list here -- no accelerator code change
   required. Deliberately curated, not auto-derived from the SDK's full
   field list: several `ClaudeAgentOptions` fields (`cli_path`, `env`,
-  `hooks`, `resume`, `session_id`, `can_use_tool`, ...) are
-  internal/session-management concerns, not per-step model-call tuning,
-  and must stay off the whitelist even though the SDK technically
-  accepts them.
+  `hooks`, `can_use_tool`, ...) are internal/session-management
+  concerns, not per-step model-call tuning, and must stay off the
+  whitelist even though the SDK technically accepts them. `resume`/
+  `session_id` **are** whitelisted (agent_sdk-only) -- see
+  `.claude/rules/context-mode.md` -- because `context_mode: session`
+  processes construct `ClaudeAgentOptions` with `resume=<session_id>`
+  for cross-call continuation; they're meaningless outside that mode.
+  `stream` is whitelisted on **both** backends -- see
+  `.claude/rules/streaming.md` -- it maps to
+  `ClaudeAgentOptions.include_partial_messages` on agent_sdk and
+  `client.messages.stream(...)` on messages_api; either way it emits
+  chunks to `execute()`'s payload `on_chunk` callback as they arrive.
 - A missing backend section (or a backend absent from this file
   entirely) resolves to an empty allowed set -- any capability key set
   against that backend fails validation, rather than being silently

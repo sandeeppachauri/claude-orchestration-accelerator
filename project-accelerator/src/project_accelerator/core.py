@@ -22,25 +22,33 @@ validation is plain dict-key checks, no JSON Schema (per plan Section 6).
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import uuid
 from pathlib import Path
 from typing import Any
 
-from orchestration_accelerator.environment import resolve_environment
+from orchestration_accelerator.environment import (
+    resolve_environment,
+    resolve_trimming_strategy,
+)
 from orchestration_accelerator.errors import friendly_error
 from orchestration_accelerator.prompting import PromptManager
 from orchestration_accelerator.registry import (
     ProcessNotFoundError,
     StepNotFoundError,
+    UnsupportedCapabilityError,
     get_default_step_config,
     get_process,
+    resolve_session_store,
     validate_capabilities,
 )
+from orchestration_accelerator.trimming import should_trim
 from model_router_accelerator import execute_with_fallback
+from model_router_accelerator.backends import open_agent_sdk_session, run_session_turn
 
 REQUIRED_PAYLOAD_KEYS = {"process", "input", "backend"}
-OPTIONAL_PAYLOAD_KEYS = {"step", "environment"}
+OPTIONAL_PAYLOAD_KEYS = {"step", "environment", "session_id", "on_chunk"}
 KNOWN_PAYLOAD_KEYS = REQUIRED_PAYLOAD_KEYS | OPTIONAL_PAYLOAD_KEYS
 VALID_BACKENDS = {"agent_sdk", "messages_api"}
 
@@ -132,18 +140,25 @@ def _resolve_capability_registry_path() -> Path:
     return DEFAULT_CAPABILITY_REGISTRY_PATH
 
 
-def _resolve_step_configs(process_name: str, only_step: str | None) -> list[tuple[str, dict]]:
-    """Returns an ordered list of (step_name, step_config) to run, honoring
-    process_registry.yaml's step order. `only_step` narrows to a single
-    step -- it never reorders or subsets the process's `steps` list beyond
-    that one selection."""
+def _resolve_step_configs(
+    process_name: str, only_step: str | None
+) -> tuple[list[tuple[str, dict]], dict[str, Any]]:
+    """Returns (ordered list of (step_name, step_config) to run,
+    process-level context metadata {context_mode, trimming, session_store}),
+    honoring process_registry.yaml's step order. `only_step` narrows to a
+    single step -- it never reorders or subsets the process's `steps`
+    list beyond that one selection."""
     registry_path, _ = _resolve_registry_and_prompts_dir()
     try:
         process = get_process(process_name, path=registry_path)
     except ProcessNotFoundError:
         # Unknown process entirely -- run the single built-in default step.
         step_name = only_step or process_name
-        return [(step_name, get_default_step_config())]
+        return [(step_name, get_default_step_config())], {
+            "context_mode": "threaded",
+            "trimming": None,
+            "session_store": None,
+        }
 
     steps = process["steps"]
     if only_step is not None:
@@ -159,7 +174,13 @@ def _resolve_step_configs(process_name: str, only_step: str | None) -> list[tupl
             )
         steps = [only_step]
 
-    return [(step, process["step_config"][step]) for step in steps]
+    step_configs = [(step, process["step_config"][step]) for step in steps]
+    context = {
+        "context_mode": process["context_mode"],
+        "trimming": process["trimming"],
+        "session_store": process["session_store"],
+    }
+    return step_configs, context
 
 
 async def _log_best_effort(scope: str, session_id: str, turn_index: int, **fields: Any) -> None:
@@ -186,6 +207,7 @@ async def _run_one_step(
     session_id: str,
     turn_index: int,
     prompts_dir: Path,
+    on_chunk: Any | None = None,
 ) -> Any:
     model = step_config.get("model", "<unresolved>")
     try:
@@ -202,6 +224,12 @@ async def _run_one_step(
             for k, v in step_config.items()
             if k not in ("prompt", "model", "fallback", "system_prompt")
         }
+        step_on_chunk = None
+        if capabilities.get("stream") and on_chunk is not None:
+            async def step_on_chunk(chunk: str, _step_name: str = step_name) -> None:
+                maybe_awaitable = on_chunk(_step_name, chunk)
+                if inspect.isawaitable(maybe_awaitable):
+                    await maybe_awaitable
         if capabilities:
             validate_capabilities(
                 capabilities, backend, path=_resolve_capability_registry_path()
@@ -209,7 +237,154 @@ async def _run_one_step(
 
         if prompt_file is not None:
             pm = PromptManager(prompts_dir=prompts_dir)
-            cfg, system_prompt, user_content = pm.render(
+            cfg, system_prompt, assistant_prompt, user_content = pm.render(
+                step_name, input_data, filename=prompt_file
+            )
+        else:
+            cfg = None
+            assistant_prompt = None
+            system_prompt = step_config.get("system_prompt", "You are a helpful assistant.")
+            if not isinstance(input_data, str):
+                raise TypeError(
+                    friendly_error(
+                        f"Step '{step_name}' expects plain text input, not "
+                        f"structured fields -- this is a config/call-site "
+                        f"mismatch.",
+                        f"Step '{step_name}' has no prompt file, so a dict "
+                        f"input has nowhere to be rendered -- pass a plain "
+                        f"string.",
+                    )
+                )
+            user_content = input_data
+
+        if assistant_prompt is not None and backend == "agent_sdk":
+            raise UnsupportedCapabilityError(
+                friendly_error(
+                    f"Step '{step_name}' declares an assistant_prompt seed "
+                    f"turn, which only works with backend: messages_api.",
+                    f"assistant_prompt + backend='agent_sdk' is unsupported -- "
+                    f"claude_agent_sdk's query() takes a single string prompt, "
+                    f"not a message array, so there is no way to seed a prior "
+                    f"assistant turn before the first real query call. Switch "
+                    f"this step to backend: messages_api, or remove "
+                    f"assistant_prompt from its prompt YAML.",
+                )
+            )
+
+        await _log_best_effort(
+            "MODEL_CALL_START",
+            session_id,
+            turn_index,
+            model=model,
+            payload={
+                "step": step_name,
+                "input": input_data,
+                "system_prompt": system_prompt,
+                "assistant_prompt": assistant_prompt,
+                "user_content": user_content,
+                "fallback": fallback,
+                "capabilities": capabilities,
+            },
+        )
+
+        call_result = await execute_with_fallback(
+            model=model,
+            fallback=fallback,
+            system_prompt=system_prompt,
+            assistant_prompt=assistant_prompt,
+            user_content=user_content,
+            backend=backend,
+            environment=environment,
+            session_id=session_id,
+            on_chunk=step_on_chunk,
+            **capabilities,
+        )
+        raw_output = call_result["text"]
+
+        await _log_best_effort(
+            "MODEL_CALL_END",
+            session_id,
+            turn_index,
+            model=call_result["model_used"],
+            latency_ms=call_result["latency_ms"],
+            payload={"step": step_name, "output": raw_output},
+            metadata={
+                "usage": call_result["usage"],
+                "stop_reason": call_result["stop_reason"],
+                "request_id": call_result["request_id"],
+                "tool_calls": call_result["tool_calls"],
+                "session_id": call_result["session_id"],
+            },
+        )
+
+        await _log_best_effort(
+            "FULL_TURN",
+            session_id,
+            turn_index,
+            model=call_result["model_used"],
+            payload={"step": step_name, "input": input_data, "output": raw_output},
+        )
+
+        validated_output = raw_output
+        if cfg is not None:
+            pm = PromptManager(prompts_dir=prompts_dir)
+            validated_output = pm.validate_output(step_name, cfg, raw_output)
+
+        return {
+            "output": validated_output,
+            "model_used": call_result["model_used"],
+            "stop_reason": call_result["stop_reason"],
+            "usage": call_result["usage"],
+            "tool_calls": call_result["tool_calls"],
+            "request_id": call_result["request_id"],
+            "latency_ms": call_result["latency_ms"],
+            "session_id": call_result["session_id"],
+        }
+    except Exception as exc:
+        # Every failure path (bad capability config, prompt render/
+        # validation, the model call itself, or output-contract
+        # validation) gets an ERROR-scope log entry, same as a
+        # successful step gets a FULL_TURN entry -- a run's trace should
+        # never go silent just because that particular turn failed.
+        await _log_best_effort(
+            "ERROR",
+            session_id,
+            turn_index,
+            model=model,
+            payload={
+                "step": step_name,
+                "input": input_data,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            },
+        )
+        raise
+
+
+async def _run_session_step(
+    client: Any,
+    step_name: str,
+    step_config: dict[str, Any],
+    input_data: str | dict[str, Any],
+    session_id: str,
+    turn_index: int,
+    prompts_dir: Path,
+    claude_session_id: str | None = None,
+) -> Any:
+    """context_mode: session counterpart to _run_one_step() -- runs one
+    step's turn on an already-open ClaudeSDKClient (see
+    open_agent_sdk_session()/run_session_turn()) instead of a fresh
+    stateless call. Returns the same structured-result shape as
+    _run_one_step(), so results[step_name] is uniform regardless of
+    context_mode."""
+    model = step_config.get("model", "<unresolved>")
+    try:
+        prompt_file = step_config.get("prompt")
+        model = step_config["model"]
+
+        if prompt_file is not None:
+            pm = PromptManager(prompts_dir=prompts_dir)
+            cfg, system_prompt, _assistant_prompt, user_content = pm.render(
                 step_name, input_data, filename=prompt_file
             )
         else:
@@ -233,52 +408,64 @@ async def _run_one_step(
             session_id,
             turn_index,
             model=model,
-            payload={
-                "step": step_name,
-                "input": input_data,
-                "system_prompt": system_prompt,
-                "user_content": user_content,
-                "fallback": fallback,
-                "capabilities": capabilities,
-            },
+            payload={"step": step_name, "input": input_data, "user_content": user_content},
+            metadata={"claude_session_id": claude_session_id} if claude_session_id else {},
         )
 
-        raw_output = await execute_with_fallback(
-            model=model,
-            fallback=fallback,
-            system_prompt=system_prompt,
-            user_content=user_content,
-            backend=backend,
-            environment=environment,
-            **capabilities,
-        )
+        async def _on_mirror_error(error: str, key: Any) -> None:
+            await _log_best_effort(
+                "WARNING",
+                session_id,
+                turn_index,
+                payload={"step": step_name, "mirror_error": error, "key": str(key)},
+                metadata={"claude_session_id": claude_session_id} if claude_session_id else {},
+            )
+
+        call_result = await run_session_turn(client, user_content, model, _on_mirror_error)
+        raw_output = call_result["text"]
 
         await _log_best_effort(
             "MODEL_CALL_END",
             session_id,
             turn_index,
-            model=model,
+            model=call_result["model_used"],
+            latency_ms=call_result["latency_ms"],
             payload={"step": step_name, "output": raw_output},
+            metadata={
+                "usage": call_result["usage"],
+                "stop_reason": call_result["stop_reason"],
+                "request_id": call_result["request_id"],
+                "tool_calls": call_result["tool_calls"],
+                "session_id": call_result["session_id"],
+                "claude_session_id": call_result["session_id"],
+            },
         )
 
         await _log_best_effort(
             "FULL_TURN",
             session_id,
             turn_index,
-            model=model,
+            model=call_result["model_used"],
             payload={"step": step_name, "input": input_data, "output": raw_output},
+            metadata={"claude_session_id": call_result["session_id"]},
         )
 
+        validated_output = raw_output
         if cfg is not None:
             pm = PromptManager(prompts_dir=prompts_dir)
-            return pm.validate_output(step_name, cfg, raw_output)
-        return raw_output
+            validated_output = pm.validate_output(step_name, cfg, raw_output)
+
+        return {
+            "output": validated_output,
+            "model_used": call_result["model_used"],
+            "stop_reason": call_result["stop_reason"],
+            "usage": call_result["usage"],
+            "tool_calls": call_result["tool_calls"],
+            "request_id": call_result["request_id"],
+            "latency_ms": call_result["latency_ms"],
+            "session_id": call_result["session_id"],
+        }
     except Exception as exc:
-        # Every failure path (bad capability config, prompt render/
-        # validation, the model call itself, or output-contract
-        # validation) gets an ERROR-scope log entry, same as a
-        # successful step gets a FULL_TURN entry -- a run's trace should
-        # never go silent just because that particular turn failed.
         await _log_best_effort(
             "ERROR",
             session_id,
@@ -290,8 +477,101 @@ async def _run_one_step(
                 "error_type": type(exc).__name__,
                 "error": str(exc),
             },
+            metadata={"claude_session_id": claude_session_id} if claude_session_id else {},
         )
         raise
+
+
+async def _execute_session_mode(
+    payload: dict[str, Any],
+    process_name: str,
+    steps_to_run: list[tuple[str, dict[str, Any]]],
+    context: dict[str, Any],
+    backend: str,
+    environment: str,
+    input_data: str | dict[str, Any],
+    session_id: str,
+    prompts_dir: Path,
+) -> dict[str, Any]:
+    """context_mode: session execution path -- opens one ClaudeSDKClient
+    for the whole call (or resumes one via payload["session_id"] for
+    cross-call continuation), runs every step's turn on that same open
+    client in order, applies trimming between turns, then closes the
+    client and returns results with the client's own session_id attached
+    to every step (decision 4/5/6 in the plan)."""
+    if backend != "agent_sdk":
+        raise UnsupportedCapabilityError(
+            friendly_error(
+                f"Process '{process_name}' uses context_mode: session, which "
+                f"only works with the agent_sdk backend -- messages_api has "
+                f"no native session concept.",
+                f"context_mode: session + backend={backend!r} is unsupported. "
+                f"Set backend to 'agent_sdk', or switch this process to "
+                f"context_mode: threaded (the default) to use messages_api.",
+            )
+        )
+
+    trimming_cfg = context.get("trimming") or {}
+    trimming_strategy = trimming_cfg.get("strategy") or resolve_trimming_strategy()
+    resolved_store = resolve_session_store(context.get("session_store"))
+    resume = payload.get("session_id")
+
+    first_step_name, first_step_config = steps_to_run[0]
+    first_model = first_step_config.get("model", "claude-sonnet-5")
+    first_system_prompt = first_step_config.get("system_prompt", "You are a helpful assistant.")
+    if first_step_config.get("prompt") is not None:
+        pm = PromptManager(prompts_dir=prompts_dir)
+        _, first_system_prompt, _, _ = pm.render(
+            first_step_name, input_data, filename=first_step_config["prompt"]
+        )
+
+    client = await open_agent_sdk_session(
+        model=first_model,
+        system_prompt=first_system_prompt,
+        environment=environment,
+        max_turns=first_step_config.get("max_turns", 1),
+        resume=resume,
+        session_store=resolved_store,
+    )
+
+    # Tracks the real claude_agent_sdk conversation id, distinct from
+    # `session_id` above (a fresh trace-correlation id per execute() call,
+    # see .claude/rules/context-mode.md). Seeded from `resume` when this
+    # call is itself continuing an earlier conversation; otherwise known
+    # only once the first turn's result comes back.
+    claude_session_id: str | None = resume
+
+    results: dict[str, Any] = {}
+    try:
+        for turn_index, (step_name, step_config) in enumerate(steps_to_run):
+            decision = should_trim(trimming_strategy, turn_index, trimming_cfg)
+            if decision.should_rotate:
+                await client.disconnect()
+                client = await open_agent_sdk_session(
+                    model=step_config.get("model", first_model),
+                    system_prompt=decision.summary,
+                    environment=environment,
+                    max_turns=step_config.get("max_turns", 1),
+                    resume=None,
+                    session_store=resolved_store,
+                )
+                claude_session_id = None
+
+            results[step_name] = await _run_session_step(
+                client,
+                step_name,
+                step_config,
+                input_data,
+                session_id,
+                turn_index,
+                prompts_dir,
+                claude_session_id,
+            )
+            claude_session_id = results[step_name]["session_id"]
+    finally:
+        await client.disconnect()
+
+    return results
 
 
 async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
@@ -310,7 +590,7 @@ async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
         environment = resolve_environment(payload.get("environment"))
 
         _, prompts_dir = _resolve_registry_and_prompts_dir()
-        steps_to_run = _resolve_step_configs(process_name, only_step)
+        steps_to_run, context = _resolve_step_configs(process_name, only_step)
     except Exception as exc:
         await _log_best_effort(
             "ERROR",
@@ -323,6 +603,20 @@ async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
             },
         )
         raise
+
+    if context["context_mode"] == "session":
+        return await _execute_session_mode(
+            payload,
+            process_name,
+            steps_to_run,
+            context,
+            backend,
+            environment,
+            input_data,
+            session_id,
+            prompts_dir,
+        )
+
     results: dict[str, Any] = {}
     for turn_index, (step_name, step_config) in enumerate(steps_to_run):
         # Prior steps' outputs are made available to later steps as
@@ -347,7 +641,9 @@ async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
                 step_input = (
                     dict(input_data) if isinstance(input_data, dict) else {"input": input_data}
                 )
-                step_input.update({f"{name}_output": out for name, out in results.items()})
+                step_input.update(
+                    {f"{name}_output": out["output"] for name, out in results.items()}
+                )
 
         results[step_name] = await _run_one_step(
             step_name,
@@ -358,6 +654,7 @@ async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
             session_id,
             turn_index,
             prompts_dir,
+            payload.get("on_chunk"),
         )
 
     return results
@@ -365,7 +662,23 @@ async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
 
 def execute(payload: dict[str, Any]) -> dict[str, Any]:
     """The master accelerator's single entry point. Returns
-    {step_name: validated_output, ...} for every step run -- one entry
-    when payload['step'] narrows to a single step, otherwise one entry
-    per step in process_registry.yaml's `steps` order."""
+    {step_name: {output, model_used, stop_reason, usage, tool_calls,
+    request_id, latency_ms, session_id}, ...} for every step run -- one
+    entry when payload['step'] narrows to a single step, otherwise one
+    entry per step in process_registry.yaml's `steps` order.
+
+    `output` carries what earlier versions of this function returned
+    directly as `results[step_name]` (a bare string) -- callers written
+    against that older contract must switch to
+    `results[step_name]["output"]`. `tool_calls`/`session_id` are
+    agent_sdk-only (empty list / `None` on messages_api); `request_id`
+    is messages_api-only (`None` on agent_sdk).
+
+    Optional payload keys: `step` (narrow to one step), `environment`,
+    `session_id` (cross-call resume for a context_mode: session process
+    -- see .claude/rules/context-mode.md), `on_chunk` (sync or async
+    `(step_name: str, chunk: str) -> None` callback invoked per chunk
+    for any step with `stream: true` -- see .claude/rules/streaming.md;
+    ignored for steps without `stream: true`, and safe to omit even when
+    a step does have it)."""
     return asyncio.run(_execute_async(payload))

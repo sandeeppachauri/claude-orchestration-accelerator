@@ -66,7 +66,7 @@ def test_validate_output_json_strips_markdown_fence():
 
 def test_render_static_only_string_input_unchanged():
     pm = PromptManager()
-    cfg, system_prompt, user_content = pm.render("classify", "I was double charged")
+    cfg, system_prompt, assistant_prompt, user_content = pm.render("classify", "I was double charged")
     assert system_prompt == cfg.system_prompt
     assert user_content == "I was double charged"
 
@@ -88,7 +88,7 @@ def test_render_multi_placeholder_ok():
         "customer_tier": "gold",
         "body": "My invoice is wrong",
     }
-    cfg, system_prompt, user_content = pm.render(
+    cfg, system_prompt, assistant_prompt, user_content = pm.render(
         "ticket_triage", values, filename="ticket_triage.yaml"
     )
     assert "gold-tier" in system_prompt
@@ -116,7 +116,7 @@ def test_render_extra_key_ignored():
     allowed -- a multi-step run shares one flat `input` dict across
     steps with different placeholder needs."""
     pm = PromptManager()
-    cfg, system_prompt, user_content = pm.render(
+    cfg, system_prompt, assistant_prompt, user_content = pm.render(
         "ticket_triage",
         {
             "ticket_id": "T-1",
@@ -151,9 +151,42 @@ def test_render_complex_both_prompts_have_placeholders():
         "body": "Site is down",
         "triage_output": "Category: technical. Urgency: high.",
     }
-    cfg, system_prompt, user_content = pm.render(
+    cfg, system_prompt, assistant_prompt, user_content = pm.render(
         "escalation_decision", values, filename="escalation_decision.yaml"
     )
     assert "free-tier" in system_prompt
     assert "2 prior tickets" in user_content
     assert "15" in user_content
+
+
+def test_render_assistant_prompt_no_placeholders_unchanged():
+    pm = PromptManager()
+    cfg = pm.get("fewshot_seed", filename="fewshot_seed.yaml")
+    assert cfg.assistant_prompt is not None
+    assert "billing-duplicate-charge" in cfg.assistant_prompt
+
+
+def test_render_assistant_prompt_with_placeholders_resolves():
+    pm = PromptManager()
+    cfg, system_prompt, assistant_prompt, user_content = pm.render(
+        "fewshot_seed",
+        {"ticket_text": "My app crashes on login"},
+        filename="fewshot_seed.yaml",
+    )
+    assert assistant_prompt is not None
+    assert "billing-duplicate-charge" in assistant_prompt
+    assert "My app crashes on login" in user_content
+    assert "{{" not in assistant_prompt
+
+
+def test_render_no_assistant_prompt_returns_none():
+    pm = PromptManager()
+    cfg, system_prompt, assistant_prompt, user_content = pm.render(
+        "classify", "I was double charged"
+    )
+    assert assistant_prompt is None
+
+
+def test_has_placeholders_includes_assistant_prompt():
+    pm = PromptManager()
+    assert pm.has_placeholders("fewshot_seed", filename="fewshot_seed.yaml") is True

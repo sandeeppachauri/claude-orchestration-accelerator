@@ -40,6 +40,10 @@ result = execute({
 })
 ```
 
+`result` is `{step_name: {output, model_used, stop_reason, usage,
+tool_calls, request_id, latency_ms, session_id}, ...}` — `output` is the
+validated text; the rest is metadata about that step's model call.
+
 Nothing about which process/step/model/backend runs is hardcoded anywhere
 in this path — it is entirely driven by the payload and by
 `config/process_registry.yaml`.
@@ -69,6 +73,13 @@ in this path — it is entirely driven by the payload and by
   config-tunable guardrail instances a step opts into via a `guardrails`
   key — see `.claude/rules/guardrails-registry.md`. All three are
   optional per step and fail-open when omitted.
+- A process may also set `context_mode: session` (default: `threaded`)
+  for a real, accumulating agent_sdk conversation across steps instead
+  of `{{<stepName>_output}}` templating, plus optional `trimming`/
+  `session_store` blocks — see `.claude/rules/context-mode.md`.
+- A step may also set `stream: true` to emit chunks to `execute()`'s
+  payload `on_chunk` callback as they arrive, on both backends — see
+  `.claude/rules/streaming.md`.
 
 ## Running tests
 

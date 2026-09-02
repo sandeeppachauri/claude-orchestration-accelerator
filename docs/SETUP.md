@@ -135,6 +135,9 @@ cleanly instead of crashing:
 ```bash
 python examples/run_orchestration_accelerator_example.py           # orchestration_accelerator alone -- no credential needed
 python examples/run_ticket_classification.py                       # full stack via project_accelerator.execute(), real model calls
+python examples/run_support_session.py                             # context_mode: session -- accumulating agent_sdk conversation, real model calls
+python examples/run_assistant_seed.py                               # assistant_prompt seed turn (fewshotLabeling), real model calls
+python examples/run_streaming.py                                    # stream: true + on_chunk callback (streamingDemo), real model calls
 python model-router/examples/run_router_example.py                 # model-router alone, real model call
 python project-accelerator/examples/run_execute_example.py         # project_accelerator entry point, real model calls
 ```
@@ -244,6 +247,15 @@ result = execute({
 })
 ```
 
+`result` is `{step_name: {output, model_used, stop_reason, usage,
+tool_calls, request_id, latency_ms}, ...}` — one entry per step run.
+`output` is the validated text (what earlier versions of this function
+returned directly as `results[step_name]`); the rest is metadata about
+that step's model call (`tool_calls`/`session_id` are agent_sdk-only,
+empty/`None` on messages_api; `request_id` is messages_api-only, `None`
+on agent_sdk). Access the classification result as
+`result["classify"]["output"]`.
+
 ## 12. Per-step model capabilities
 
 A step block in `process_registry.yaml` isn't limited to
@@ -297,7 +309,7 @@ After any change, re-verify before considering it deployed:
 
 ```bash
 pytest . model-router project-accelerator   # step 6
-python examples/run_ticket_classification.py  # or the relevant example from step 7
+python examples/run_ticket_classification.py  # or the relevant example from step 7 (run_support_session.py / run_assistant_seed.py / run_streaming.py)
 ```
 
 If the change is scaffold-facing (`project-accelerator/templates/`, the

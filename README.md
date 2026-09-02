@@ -14,6 +14,12 @@ result = execute({
 })
 ```
 
+`result` is `{step_name: {output, model_used, stop_reason, usage,
+tool_calls, request_id, latency_ms}, ...}` — `output` is the validated
+text, the rest is metadata about that step's model call. See
+`CHANGELOG.md` if you're migrating from a version where `result[step]`
+was a bare string.
+
 See `Master_Accelerator_Plan.md` at the repo root for the full design.
 
 ## Capabilities (per-step model config)

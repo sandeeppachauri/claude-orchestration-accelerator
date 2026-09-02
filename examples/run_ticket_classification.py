@@ -32,8 +32,14 @@ def main() -> None:
         print(f"No credential resolved ({exc}). Set ANTHROPIC_API_KEY or run `claude login`.")
         return
 
-    for step, output in result.items():
-        print(f"[{step}] {output}")
+    for step, step_result in result.items():
+        usage = step_result["usage"]
+        print(f"[{step}] {step_result['output']}")
+        print(
+            f"    model_used={step_result['model_used']} "
+            f"stop_reason={step_result['stop_reason']} "
+            f"usage={usage} latency_ms={step_result['latency_ms']:.1f}"
+        )
 
 
 if __name__ == "__main__":

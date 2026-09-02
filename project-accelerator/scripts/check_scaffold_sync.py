@@ -24,8 +24,11 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ROOT_CONFIG = REPO_ROOT / "config"
+ROOT_PROMPTS = REPO_ROOT / "prompts"
+ROOT_EXAMPLES = REPO_ROOT / "examples"
 SCAFFOLD_DATA = REPO_ROOT / "project-accelerator" / "src" / "project_accelerator" / "scaffold_data"
 SCAFFOLD_CONFIG = SCAFFOLD_DATA / "config"
+SCAFFOLD_PROMPTS = SCAFFOLD_DATA / "prompts"
 CAPABILITY_RULE_DOC = REPO_ROOT / ".claude" / "rules" / "capability-registry.md"
 CLI_PY = REPO_ROOT / "project-accelerator" / "src" / "project_accelerator" / "cli.py"
 
@@ -37,6 +40,8 @@ EXACT_SYNCED_PAIRS = [
     (REPO_ROOT / ".claude" / "rules" / "capability-registry.md", SCAFFOLD_DATA / ".claude" / "rules" / "capability-registry.md"),
     (REPO_ROOT / ".claude" / "rules" / "mcp-scope.md", SCAFFOLD_DATA / ".claude" / "rules" / "mcp-scope.md"),
     (REPO_ROOT / ".claude" / "rules" / "guardrails-registry.md", SCAFFOLD_DATA / ".claude" / "rules" / "guardrails-registry.md"),
+    (REPO_ROOT / ".claude" / "rules" / "context-mode.md", SCAFFOLD_DATA / ".claude" / "rules" / "context-mode.md"),
+    (REPO_ROOT / ".claude" / "rules" / "streaming.md", SCAFFOLD_DATA / ".claude" / "rules" / "streaming.md"),
     (REPO_ROOT / "config" / "process_registry.yaml", SCAFFOLD_CONFIG / "process_registry.yaml"),
     (REPO_ROOT / "config" / "batch_registry.yaml", SCAFFOLD_CONFIG / "batch_registry.yaml"),
 ]
@@ -162,6 +167,35 @@ def check_howto_capability_table_matches_registry(errors: list[str]) -> None:
         )
 
 
+def check_prompts_mirrored(errors: list[str]) -> None:
+    """Every prompts/*.yaml a process_registry.yaml step references (via
+    that step's `prompt` key) must exist under scaffold_data/prompts/ too
+    -- otherwise a scaffolded project ships a process pointing at a
+    prompt file that was never copied over. This repo's own examples/
+    directory is NOT mirrored into scaffold_data (cpa new generates its
+    pipeline/run_pipeline.py inline via cli.py's _write_pipeline_runner()
+    rather than copying static example scripts) -- only prompts/*.yaml
+    referenced by a process actually shipped in scaffold_data's own
+    process_registry.yaml need a scaffold-side counterpart."""
+    scaffold_registry = _load_yaml(SCAFFOLD_CONFIG / "process_registry.yaml")
+    referenced_prompts: set[str] = set()
+    for process_block in scaffold_registry.values():
+        if not isinstance(process_block, dict):
+            continue
+        for step_name in process_block.get("steps", []):
+            step_cfg = process_block.get(step_name)
+            if isinstance(step_cfg, dict) and step_cfg.get("prompt"):
+                referenced_prompts.add(step_cfg["prompt"])
+
+    for prompt_file in sorted(referenced_prompts):
+        if not (SCAFFOLD_PROMPTS / prompt_file).exists():
+            errors.append(
+                f"scaffold_data's config/process_registry.yaml references "
+                f"prompts/{prompt_file}, but scaffold_data/prompts/{prompt_file} "
+                f"is missing -- copy it from the root prompts/ directory"
+            )
+
+
 def check_guardrails_yaml_exists(errors: list[str]) -> None:
     scaffold_guardrails = SCAFFOLD_CONFIG / "guardrails.yaml"
     if not scaffold_guardrails.exists():
@@ -175,20 +209,27 @@ def check_examples_referenced(errors: list[str]) -> None:
     root_registry = _load_yaml(ROOT_CONFIG / "process_registry.yaml")
     scaffold_registry = _load_yaml(SCAFFOLD_CONFIG / "process_registry.yaml")
 
-    if "templatingDemo" in root_registry:
-        if "templatingDemo" not in scaffold_registry:
+    for demo_process in (
+        "templatingDemo",
+        "supportSession",
+        "fewshotLabeling",
+        "streamingDemo",
+    ):
+        if demo_process not in root_registry:
+            continue
+        if demo_process not in scaffold_registry:
             errors.append(
-                "root config/process_registry.yaml has 'templatingDemo' but "
+                f"root config/process_registry.yaml has '{demo_process}' but "
                 "scaffold_data's copy does not -- example renamed/removed "
                 "without updating the scaffold"
             )
         else:
-            root_steps = set(root_registry["templatingDemo"].get("steps", []))
-            scaffold_steps = set(scaffold_registry["templatingDemo"].get("steps", []))
+            root_steps = set(root_registry[demo_process].get("steps", []))
+            scaffold_steps = set(scaffold_registry[demo_process].get("steps", []))
             missing_steps = root_steps - scaffold_steps
             if missing_steps:
                 errors.append(
-                    f"templatingDemo step(s) {sorted(missing_steps)} in root "
+                    f"{demo_process} step(s) {sorted(missing_steps)} in root "
                     f"config/process_registry.yaml missing from scaffold_data's copy"
                 )
 
@@ -224,6 +265,7 @@ def main() -> int:
     check_howto_capability_table_matches_registry(errors)
     check_guardrails_yaml_exists(errors)
     check_examples_referenced(errors)
+    check_prompts_mirrored(errors)
 
     if errors:
         print("scaffold_data is out of sync with the repo root:\n", file=sys.stderr)

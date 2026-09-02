@@ -1,0 +1,34 @@
+step: fewshot_seed
+version: 1
+scope:
+  in_bounds:
+    - "Classify the incoming support ticket into a short category label"
+  out_of_bounds:
+    - "Do not add explanation beyond the label"
+
+format:
+  type: text
+  max_words: 10
+
+constraints:
+  - "Follow the style demonstrated by the seeded assistant turn"
+  - "Answer with a short label only, no full sentence"
+
+# Demonstrates assistant_prompt (see .claude/rules/process-registry.md's
+# "Runtime input & {{key}}" section) -- a canned prior assistant turn
+# seeded before the real user turn, for few-shot priming.
+# messages_api-only: claude_agent_sdk's query() takes a single string
+# prompt, not a message array, so there is no SDK surface to seed a
+# prior assistant turn on agent_sdk -- a step with assistant_prompt set
+# raises UnsupportedCapabilityError if called with backend: agent_sdk.
+system_prompt: |
+  You are a support ticket labeler. Match the terse labeling style shown
+  in the conversation so far.
+
+assistant_prompt: |
+  Example ticket: "My card was charged twice this month."
+  Label: billing-duplicate-charge
+
+user_prompt: |
+  Ticket: {{ticket_text}}
+  Label:

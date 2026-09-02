@@ -5,9 +5,24 @@ from orchestration_accelerator.registry import UnsupportedCapabilityError
 from project_accelerator import PayloadValidationError, execute
 
 
+def _result(text, **overrides):
+    base = {
+        "text": text,
+        "model_used": "claude-haiku-4-5-20251001",
+        "usage": {},
+        "stop_reason": "end_turn",
+        "request_id": None,
+        "latency_ms": 0.0,
+        "session_id": None,
+        "tool_calls": [],
+    }
+    base.update(overrides)
+    return base
+
+
 def _patch_router(monkeypatch, response="billing"):
     async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
-        return response
+        return _result(response, model_used=model)
 
     monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
 
@@ -119,7 +134,7 @@ def test_execute_single_step(monkeypatch):
             "backend": "agent_sdk",
         }
     )
-    assert result == {"classify": "billing"}
+    assert result["classify"]["output"] == "billing"
 
 
 def test_execute_full_process_runs_all_steps_in_registry_order(monkeypatch):
@@ -137,7 +152,7 @@ def test_execute_full_process_runs_all_steps_in_registry_order(monkeypatch):
 
     async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
         calls.append(model)
-        return responses[len(calls) - 1]
+        return _result(responses[len(calls) - 1], model_used=model)
 
     monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
 
@@ -162,7 +177,7 @@ def test_execute_multi_field_dict_input_survives_across_steps(monkeypatch):
 
     async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
         seen_user_content.append(user_content)
-        return responses[len(seen_user_content) - 1]
+        return _result(responses[len(seen_user_content) - 1], model_used=model)
 
     monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
 
@@ -206,7 +221,7 @@ def test_execute_full_process_threads_prior_step_outputs(monkeypatch):
 
     async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
         seen_user_content.append(user_content)
-        return responses[len(seen_user_content) - 1]
+        return _result(responses[len(seen_user_content) - 1], model_used=model)
 
     monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
 
@@ -239,7 +254,7 @@ def test_execute_dict_input_renders_placeholders(monkeypatch):
     async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
         seen["system_prompt"] = system_prompt
         seen["user_content"] = user_content
-        return "ok"
+        return _result("ok", model_used=model)
 
     monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
 
@@ -256,7 +271,7 @@ def test_execute_dict_input_renders_placeholders(monkeypatch):
             "backend": "agent_sdk",
         }
     )
-    assert result == {"triage": "ok"}
+    assert result["triage"]["output"] == "ok"
     assert "gold-tier" in seen["system_prompt"]
     assert "T-1" in seen["user_content"]
     assert "Ada" in seen["user_content"]
@@ -303,8 +318,10 @@ def test_escalate_step_capabilities_are_agent_sdk_whitelisted(monkeypatch):
             "backend": "agent_sdk",
         }
     )
-    assert result == {
-        "escalate": {"escalate": True, "urgency": "high", "reason": "SLA breach imminent"}
+    assert result["escalate"]["output"] == {
+        "escalate": True,
+        "urgency": "high",
+        "reason": "SLA breach imminent",
     }
 
 
@@ -354,4 +371,220 @@ def test_default_configuration_fallback_for_undefined_process(monkeypatch):
             "backend": "agent_sdk",
         }
     )
-    assert result == {"someUndefinedProcess": "anything goes"}
+    assert result["someUndefinedProcess"]["output"] == "anything goes"
+
+
+def test_execute_returns_structured_result_with_usage_and_stop_reason(monkeypatch):
+    """Part B: results[step] is a dict carrying output plus model call
+    metadata, not a bare string -- proves no information loss, only
+    relocation, from the pre-Part-B contract."""
+    _patch_logging(monkeypatch)
+
+    async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
+        return _result(
+            "billing",
+            model_used="claude-sonnet-5",
+            usage={"input_tokens": 12, "output_tokens": 3},
+            stop_reason="end_turn",
+            latency_ms=42.5,
+        )
+
+    monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
+
+    result = execute(
+        {
+            "process": "ticketClassification",
+            "step": "classify",
+            "input": "I was double charged",
+            "backend": "agent_sdk",
+        }
+    )
+    step_result = result["classify"]
+    assert step_result["output"] == "billing"
+    assert step_result["model_used"] == "claude-sonnet-5"
+    assert step_result["stop_reason"] == "end_turn"
+    assert step_result["usage"] == {"input_tokens": 12, "output_tokens": 3}
+    assert step_result["latency_ms"] == 42.5
+    assert step_result["tool_calls"] == []
+    assert step_result["request_id"] is None
+
+
+def test_threading_pulls_output_field_not_whole_dict(monkeypatch):
+    """The {{<stepName>_output}} placeholder must thread the prior step's
+    text output, not a stringified dict -- the one spot Part B's plan
+    flagged as able to silently corrupt output if missed."""
+    _patch_logging(monkeypatch)
+
+    seen_user_content = []
+    responses = [
+        "billing",
+        '{"summary": "double charge", "urgency": "high"}',
+        "We're sorry for the double charge and are looking into it.",
+    ]
+
+    async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
+        seen_user_content.append(user_content)
+        return _result(responses[len(seen_user_content) - 1], model_used=model)
+
+    monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
+
+    execute(
+        {
+            "process": "ticketClassification",
+            "input": "I was double charged",
+            "backend": "agent_sdk",
+        }
+    )
+
+    assert "billing" in seen_user_content[1]
+    assert "{'output'" not in seen_user_content[1]
+    assert "model_used" not in seen_user_content[1]
+
+
+def test_assistant_prompt_on_agent_sdk_raises_before_model_call(monkeypatch):
+    called = False
+
+    async def _fake_execute_with_fallback(**kwargs):
+        nonlocal called
+        called = True
+        return _result("should not run")
+
+    monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
+    _patch_logging(monkeypatch)
+
+    with pytest.raises(UnsupportedCapabilityError):
+        execute(
+            {
+                "process": "fewshotLabeling",
+                "step": "label",
+                "input": {"ticket_text": "hello"},
+                "backend": "agent_sdk",
+            }
+        )
+    assert called is False
+
+
+def test_assistant_prompt_on_messages_api_passes_through(monkeypatch):
+    _patch_logging(monkeypatch)
+    seen = {}
+
+    async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
+        seen["assistant_prompt"] = kwargs.get("assistant_prompt")
+        return _result("billing-label", model_used=model)
+
+    monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
+
+    result = execute(
+        {
+            "process": "fewshotLabeling",
+            "step": "label",
+            "input": {"ticket_text": "hello"},
+            "backend": "messages_api",
+        }
+    )
+    assert result["label"]["output"] == "billing-label"
+    assert seen["assistant_prompt"] is not None
+    assert "billing-duplicate-charge" in seen["assistant_prompt"]
+
+
+def test_stream_true_step_invokes_on_chunk_with_step_name(monkeypatch):
+    _patch_logging(monkeypatch)
+
+    async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, on_chunk=None, **kwargs):
+        if on_chunk is not None:
+            await on_chunk("Hello ")
+            await on_chunk("world")
+        return _result("Hello world", model_used=model)
+
+    monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
+
+    received = []
+
+    def on_chunk(step_name, chunk):
+        received.append((step_name, chunk))
+
+    result = execute(
+        {
+            "process": "streamingDemo",
+            "step": "narrate",
+            "input": {"scenario": "a login bug"},
+            "backend": "messages_api",
+            "on_chunk": on_chunk,
+        }
+    )
+    assert received == [("narrate", "Hello "), ("narrate", "world")]
+    assert result["narrate"]["output"] == "Hello world"
+
+
+def test_stream_true_step_with_no_on_chunk_still_works(monkeypatch):
+    _patch_logging(monkeypatch)
+
+    async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, on_chunk=None, **kwargs):
+        assert on_chunk is None
+        return _result("Hello world", model_used=model)
+
+    monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
+
+    result = execute(
+        {
+            "process": "streamingDemo",
+            "step": "narrate",
+            "input": {"scenario": "a login bug"},
+            "backend": "messages_api",
+        }
+    )
+    assert result["narrate"]["output"] == "Hello world"
+
+
+def test_non_stream_step_does_not_receive_on_chunk(monkeypatch):
+    """A step with no stream: true must not be wired with a step-level
+    on_chunk wrapper, even when the payload supplies one -- only
+    stream: true steps opt in."""
+    _patch_logging(monkeypatch)
+
+    async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, on_chunk=None, **kwargs):
+        assert on_chunk is None
+        return _result("billing", model_used=model)
+
+    monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
+
+    execute(
+        {
+            "process": "ticketClassification",
+            "step": "classify",
+            "input": "I was double charged",
+            "backend": "agent_sdk",
+            "on_chunk": lambda step_name, chunk: None,
+        }
+    )
+
+
+def test_streaming_cross_step_receives_full_text_via_threading(monkeypatch):
+    """Part D's 'full text only' decision: a later step's
+    {{stepName_output}} placeholder must receive step 1's fully
+    assembled text, not chunks -- streaming is purely a side-channel
+    emission, not a new data shape flowing between steps."""
+    _patch_logging(monkeypatch)
+
+    seen_user_content = []
+    responses = [
+        "billing",
+        '{"summary": "double charge", "urgency": "high"}',
+        "We're sorry for the double charge and are looking into it.",
+    ]
+
+    async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, on_chunk=None, **kwargs):
+        seen_user_content.append(user_content)
+        return _result(responses[len(seen_user_content) - 1], model_used=model)
+
+    monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
+
+    execute(
+        {
+            "process": "ticketClassification",
+            "input": "I was double charged",
+            "backend": "agent_sdk",
+        }
+    )
+
+    assert "billing" in seen_user_content[1]

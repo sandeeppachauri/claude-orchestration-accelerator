@@ -43,6 +43,14 @@ SYNCED_PAIRS = [
         ROOT / ".claude" / "rules" / "guardrails-registry.md",
         SCAFFOLD_DATA / ".claude" / "rules" / "guardrails-registry.md",
     ),
+    (
+        ROOT / ".claude" / "rules" / "context-mode.md",
+        SCAFFOLD_DATA / ".claude" / "rules" / "context-mode.md",
+    ),
+    (
+        ROOT / ".claude" / "rules" / "streaming.md",
+        SCAFFOLD_DATA / ".claude" / "rules" / "streaming.md",
+    ),
 ]
 
 

@@ -29,8 +29,8 @@ def main() -> None:
                 "backend": "messages_api",
             }
         )
-        for step, output in result.items():
-            print(f"[{step}] {output}")
+        for step, step_result in result.items():
+            print(f"[{step}] {step_result['output']}")
 
         print("\n--- single-step narrowing (only 'welcome' runs) ---")
         result = execute(

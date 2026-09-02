@@ -32,7 +32,8 @@ async def main() -> None:
     except AuthResolutionError as exc:
         print(f"No credential resolved ({exc}). Set ANTHROPIC_API_KEY or run `claude login`.")
         return
-    print(result)
+    print(result["text"])
+    print(f"model_used={result['model_used']} usage={result['usage']}")
 
 
 if __name__ == "__main__":

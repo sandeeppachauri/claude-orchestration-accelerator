@@ -61,10 +61,11 @@ Rules:
 ## Runtime input & `{{key}}` placeholders
 
 A prompt file under `prompts/` (see `.claude/rules/prompt-yaml.md` if
-present, or `prompt_manager.py`) has `system_prompt` and an optional
-`user_prompt` field. Both are plain strings and may contain `{{key}}`
-placeholders. `execute()`'s payload `input` then works one of two ways,
-enforced by `PromptManager.render()` (mandatory, not optional):
+present, or `prompt_manager.py`) has `system_prompt`, an optional
+`user_prompt` field, and an optional `assistant_prompt` field. All three
+are plain strings and may contain `{{key}}` placeholders. `execute()`'s
+payload `input` then works one of two ways, enforced by
+`PromptManager.render()` (mandatory, not optional):
 
 - **No placeholders in the prompt** — `input` must be a plain string,
   sent verbatim as the user turn. `system_prompt` is used as-is. This is
@@ -86,6 +87,30 @@ See `prompts/classify.yaml` (no placeholders), `prompts/ticket_triage.yaml`
 and `user_prompt`, paired with `templatingDemo.escalate` below for a full
 capability-key reference) for worked examples, wired up under the
 `templatingDemo` process in this file.
+
+### `assistant_prompt` -- seeding a canned prior assistant turn
+
+Optional `assistant_prompt` field, same tier as `user_prompt`, resolved
+by the same `{{key}}` placeholder rules. When present, it is prepended
+as a canned prior assistant turn before the real user turn --
+`messages: [{role: "assistant", content: <rendered assistant_prompt>}, {role: "user", ...}]`
+-- for few-shot priming or "continue from this canned response"
+patterns. This is a *static, per-call* seed declared in config, distinct
+from `context_mode: session`'s real, accumulating conversation (see
+`.claude/rules/context-mode.md`) -- `assistant_prompt` only ever seeds
+one canned turn, it does not grow across steps.
+
+**`messages_api`-only.** `claude_agent_sdk`'s `query()` takes a single
+string prompt, not a message array, so there is no SDK surface to seed a
+prior assistant turn on `agent_sdk` -- a step with `assistant_prompt` set
+raises `UnsupportedCapabilityError` before any model call if run with
+`backend: agent_sdk`, the same "config says X, backend can't do X" shape
+as `context_mode: session` + `messages_api`. Omitting `assistant_prompt`
+= unchanged single-turn array on both backends, no existing prompt YAML
+needs edits.
+
+See `prompts/fewshot_seed.yaml` + the `fewshotLabeling` process +
+`examples/run_assistant_seed.py` for a worked example.
 
 ## Threading a prior step's output: `{{<stepName>_output}}`
 

@@ -13,7 +13,16 @@ def make_flaky_call(fail_models: set[str], calls: list[str]):
         calls.append(model)
         if model in fail_models:
             raise RateLimitOrOverloadError(f"{model} is overloaded (529)")
-        return f"ok:{model}"
+        return {
+            "text": f"ok:{model}",
+            "model_used": model,
+            "usage": {},
+            "stop_reason": "end_turn",
+            "request_id": None,
+            "latency_ms": 0.0,
+            "session_id": None,
+            "tool_calls": [],
+        }
 
     return _call
 
@@ -32,7 +41,7 @@ async def test_primary_model_succeeds_no_fallback_needed(monkeypatch, backend):
         backend=backend,
         base_backoff_seconds=0,
     )
-    assert result == "ok:claude-haiku-4-5-20251001"
+    assert result["text"] == "ok:claude-haiku-4-5-20251001"
     assert calls == ["claude-haiku-4-5-20251001"]
 
 
@@ -52,7 +61,7 @@ async def test_fallback_at_first_position(monkeypatch, backend):
         backend=backend,
         base_backoff_seconds=0,
     )
-    assert result == "ok:claude-sonnet-5"
+    assert result["text"] == "ok:claude-sonnet-5"
     assert calls == ["claude-haiku-4-5-20251001", "claude-sonnet-5"]
 
 
@@ -74,7 +83,7 @@ async def test_fallback_at_last_position(monkeypatch, backend):
         backend=backend,
         base_backoff_seconds=0,
     )
-    assert result == "ok:claude-opus-4-8"
+    assert result["text"] == "ok:claude-opus-4-8"
     assert calls == [
         "claude-haiku-4-5-20251001",
         "claude-sonnet-5",
@@ -143,3 +152,39 @@ async def test_non_rate_limit_error_propagates_without_fallback(monkeypatch):
             base_backoff_seconds=0,
         )
     assert calls == ["claude-haiku-4-5-20251001"]
+
+
+async def test_fallback_logs_transition_before_success(monkeypatch):
+    """A fallback mid-chain must be visible even once the final model
+    succeeds -- not just discoverable from which model ended up serving."""
+    logged = []
+
+    async def _fake_log(scope, session_id, turn_index=0, **fields):
+        logged.append({"scope": scope, "session_id": session_id, **fields})
+
+    import orchestration_accelerator.logging as logging_module
+
+    monkeypatch.setattr(logging_module, "log", _fake_log)
+
+    calls: list[str] = []
+    monkeypatch.setitem(
+        router_module.BACKENDS,
+        "agent_sdk",
+        make_flaky_call(fail_models={"claude-haiku-4-5-20251001"}, calls=calls),
+    )
+
+    await execute_with_fallback(
+        model="claude-haiku-4-5-20251001",
+        fallback=["claude-sonnet-5"],
+        system_prompt="sys",
+        user_content="hi",
+        backend="agent_sdk",
+        base_backoff_seconds=0,
+        session_id="run-1",
+    )
+
+    warnings = [c for c in logged if c["scope"] == "WARNING"]
+    assert len(warnings) == 1
+    assert warnings[0]["session_id"] == "run-1"
+    assert warnings[0]["payload"]["fallback_from"] == "claude-haiku-4-5-20251001"
+    assert warnings[0]["payload"]["fallback_to"] == "claude-sonnet-5"

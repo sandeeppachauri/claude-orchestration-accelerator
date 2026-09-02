@@ -40,7 +40,9 @@ DEFAULT_CAPABILITY_REGISTRY_PATH = (
     Path(__file__).resolve().parents[3] / "config" / "capability_registry.yaml"
 )
 
-_RESERVED_KEYS = {"id", "description", "steps"}
+_RESERVED_KEYS = {"id", "description", "steps", "context_mode", "trimming", "session_store"}
+
+VALID_CONTEXT_MODES = {"threaded", "session"}
 
 _GENERIC_DEFAULT_SYSTEM_PROMPT = (
     "You are a general-purpose assistant step running inside the "
@@ -66,6 +68,18 @@ class UnsupportedCapabilityError(Exception):
     capability key not whitelisted for the chosen backend in
     capability_registry.yaml -- raised before the model call, instead of
     a TypeError several layers deep inside the SDK/API client."""
+
+
+class InvalidContextModeError(Exception):
+    """Raised at process-load time when a process's `context_mode` key
+    is present but not one of VALID_CONTEXT_MODES."""
+
+
+class SessionStoreResolutionError(Exception):
+    """Raised when a process's `session_store.backend` can't be resolved
+    -- an unknown backend name, a `custom` backend with no/bad `factory`,
+    or one of the documented copy-in-yourself backends (s3/redis/postgres)
+    with no adapter actually installed."""
 
 
 def load_registry(path: Path | str = DEFAULT_REGISTRY_PATH) -> dict[str, Any]:
@@ -94,6 +108,17 @@ def get_process(
         )
 
     block = registry[process]
+    context_mode = block.get("context_mode", "threaded")
+    if context_mode not in VALID_CONTEXT_MODES:
+        raise InvalidContextModeError(
+            friendly_error(
+                f"Process '{process}' has an invalid context_mode setting -- "
+                f"this needs a config fix.",
+                f"Process '{process}' has context_mode={context_mode!r}, must "
+                f"be one of {sorted(VALID_CONTEXT_MODES)}.",
+            )
+        )
+
     steps: list[str] = list(block.get("steps", []))
     step_config: dict[str, Any] = {}
     for step_name in steps:
@@ -114,6 +139,9 @@ def get_process(
         "description": block.get("description"),
         "steps": steps,
         "step_config": step_config,
+        "context_mode": context_mode,
+        "trimming": block.get("trimming"),
+        "session_store": block.get("session_store"),
     }
 
 
@@ -176,6 +204,91 @@ def validate_capabilities(
                 f"'{backend}' section once that backend actually supports it.",
             )
         )
+
+
+_COPY_IN_YOURSELF_BACKENDS = {"s3", "redis", "postgres"}
+
+
+def resolve_session_store(session_store_config: dict[str, Any] | None) -> Any | None:
+    """Resolves a process's `session_store` block (see
+    .claude/rules/context-mode.md) to a claude_agent_sdk SessionStore-
+    conforming object, or None if the process has no session_store
+    configured (context_mode: session then behaves exactly like today --
+    local-disk-only transcript, no cross-host resume).
+
+    - backend: "memory" -> claude_agent_sdk's built-in InMemorySessionStore.
+    - backend: "custom" -> imports and calls the zero-arg callable named
+      by `factory` ("dotted.path:callable_name").
+    - backend: "s3" | "redis" | "postgres" -> these are NOT vendored into
+      this repo (avoids forcing aws-sdk/ioredis/pg as dependencies on
+      every user) -- raises SessionStoreResolutionError pointing at
+      .claude/rules/context-mode.md's copy-in-yourself workflow, not an
+      ImportError deep in a missing dependency.
+    - any other backend name -> SessionStoreResolutionError.
+    """
+    if session_store_config is None:
+        return None
+
+    backend = session_store_config.get("backend")
+    if backend == "memory":
+        from claude_agent_sdk import InMemorySessionStore
+
+        return InMemorySessionStore()
+
+    if backend == "custom":
+        factory = session_store_config.get("factory")
+        if not factory or ":" not in factory:
+            raise SessionStoreResolutionError(
+                friendly_error(
+                    "This process's session_store config is missing a valid "
+                    "factory setting.",
+                    f"session_store.backend == 'custom' requires a "
+                    f"'factory' value shaped 'dotted.module.path:callable_name', "
+                    f"got {factory!r}.",
+                )
+            )
+        module_path, _, callable_name = factory.partition(":")
+        import importlib
+
+        module = importlib.import_module(module_path)
+        try:
+            build = getattr(module, callable_name)
+        except AttributeError as exc:
+            raise SessionStoreResolutionError(
+                friendly_error(
+                    "This process's session_store factory couldn't be found.",
+                    f"No callable {callable_name!r} in module {module_path!r} "
+                    f"(session_store.factory={factory!r}).",
+                )
+            ) from exc
+        return build()
+
+    if backend in _COPY_IN_YOURSELF_BACKENDS:
+        raise SessionStoreResolutionError(
+            friendly_error(
+                f"This process wants a '{backend}' session store, but that "
+                f"isn't built into this accelerator -- it needs a one-time "
+                f"setup step.",
+                f"session_store.backend == {backend!r} has no adapter shipped "
+                f"in this repo (avoids forcing aws-sdk/ioredis/pg as "
+                f"dependencies on every user). Copy the matching reference "
+                f"adapter from "
+                f"https://github.com/anthropics/claude-agent-sdk-typescript/"
+                f"tree/main/examples/session-stores/ into this project, then "
+                f"wire it via session_store: {{backend: custom, factory: "
+                f"'your.module:build_store'}}. See "
+                f".claude/rules/context-mode.md.",
+            )
+        )
+
+    raise SessionStoreResolutionError(
+        friendly_error(
+            f"This process's session_store config uses an unrecognized "
+            f"backend.",
+            f"Unknown session_store.backend {backend!r}. Must be one of "
+            f"'memory', 'custom', {sorted(_COPY_IN_YOURSELF_BACKENDS)}.",
+        )
+    )
 
 
 def get_default_step_config(environment: str | None = None) -> dict[str, Any]:

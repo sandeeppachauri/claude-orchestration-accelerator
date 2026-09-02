@@ -1,0 +1,27 @@
+step: narrate
+version: 1
+scope:
+  in_bounds:
+    - "Write a short, free-form narration of a support scenario"
+  out_of_bounds:
+    - "Do not answer in a fixed enum/JSON format -- this step is a plain-text demo"
+
+format:
+  type: text
+  max_words: 150
+
+constraints:
+  - "Keep the narration under 150 words"
+  - "Plain prose, no markdown headers or bullet lists"
+
+# Demonstrates stream: true (see .claude/rules/streaming.md) -- a plain
+# free-text step is the clearest case for real-time chunk emission, since
+# there's no fixed enum/JSON shape to wait for.
+system_prompt: |
+  You are a support agent narrating a scenario out loud, one sentence
+  flowing into the next, for a live status display. Write in plain
+  prose, no headers or lists.
+
+user_prompt: |
+  Narrate, in a few sentences, what's happening as a support agent
+  investigates this issue: {{scenario}}

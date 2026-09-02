@@ -46,3 +46,10 @@ def resolve_default_model(dotenv_path: Path | str | None = None) -> str:
     default configuration fallback."""
     _ensure_dotenv_loaded(dotenv_path)
     return os.environ.get("DEFAULT_MODEL", "claude-sonnet-5")
+
+
+def resolve_trimming_strategy(dotenv_path: Path | str | None = None) -> str:
+    """.env's DEFAULT_TRIMMING_STRATEGY -> 'none'. Fallback used by a
+    context_mode: session process that omits its own `trimming` block."""
+    _ensure_dotenv_loaded(dotenv_path)
+    return os.environ.get("DEFAULT_TRIMMING_STRATEGY", "none")

@@ -65,6 +65,21 @@ Decisions locked in this session:
    `context_mode: "threaded"` processes never touch `session_store` —
    it's meaningless without a `ClaudeSDKClient` to mirror.
 
+## Build order (resolved this session)
+
+Parts A/B/C/D all touch `execute()`'s return shape and/or the same
+`core.py`/`backends.py` call sites. Build **Part B first**, not in the
+A→B→C→D order this doc's part numbering implies. Reason: `ResultMessage`/
+`AssistantMessage` already carry `usage`/`stop_reason`/`session_id`
+natively (confirmed above) — Part B's structured-dict return is the
+foundation the other three parts add fields to (A adds `session_id`+
+`session_store` behavior, C adds the `assistant_prompt` seed turn, D
+adds `on_chunk`/`StreamEvent` wiring), so building B first avoids three
+separate hand-edits to the same return-shape code in `core.py` that
+would otherwise conflict. Order: **B, then A, then C, then D** — each
+part's "Files to touch"/return-shape sections below assume B has
+already landed.
+
 ## Design
 
 ### `process_registry.yaml` schema addition
@@ -124,6 +139,40 @@ supportSession:
   `SessionStore`-conforming object. This is the escape hatch for a
   project-authored adapter (including a copied-in reference adapter)
   without inventing a new registry entry per backend name.
+- **Confirmed against installed `claude_agent_sdk==0.2.140` source**
+  (`.venv/Lib/site-packages/claude_agent_sdk/types.py`), replacing every
+  "confirm at implementation time" placeholder below with real field
+  names:
+  - `ClaudeAgentOptions` (types.py:1941+) has `resume: str | None`
+    (:2005), `session_store: SessionStore | None` (:2325),
+    `session_store_flush: "batched" | "eager" = "batched"` (:2333), and
+    a separate `continue_conversation: bool = False` (:2001) that is
+    **mutually exclusive with `resume`** per its own docstring (:2003)
+    — `context-mode.md` must call this out explicitly since a process
+    author could otherwise set both.
+  - `ClaudeSDKClient` (client.py:26) exposes `async def query(...)`
+    (:248), `async def receive_response(...)` (:532), and
+    `async def receive_messages(...)` (:236) — matches this plan's
+    "`query()` + drain loop per step on one open client" design exactly,
+    no adjustment needed.
+  - `AssistantMessage` (types.py:1119) carries `usage: dict[str, Any] |
+    None`, `stop_reason: str | None`, `session_id: str | None`, and
+    `message_id` per-turn (:1124-1130) — available on every step's
+    response, not only at the end.
+  - `ResultMessage` (types.py:1319) carries `session_id: str` (required,
+    :1327), `stop_reason`, `total_cost_usd`, `usage: dict`, `result`,
+    `model_usage: dict[str, ModelUsage]` (:1333 — per-model token/cost
+    breakdown, already computed by the SDK), `errors`,
+    `terminal_reason`. This is the authoritative source for Part A's
+    end-of-call `session_id` and Part B's usage/cost capture — prefer it
+    over reading off the last `AssistantMessage`.
+  - `SessionKey`/`SessionStoreEntry`/`SessionStoreListEntry`/
+    `SessionSummaryEntry` (types.py:1493-1567) are the exact
+    `SessionStore` protocol shapes `session_store.py`'s adapters
+    (`append`/`load`/`list_sessions`/`list_session_summaries`/
+    `list_subkeys`) must implement — reference these dataclasses
+    directly when writing `context-mode.md`'s `SessionStore` section
+    instead of re-describing the shape from memory.
 - Whichever store is resolved gets passed as `session_store=` to the
   `ClaudeSDKClient` construction in the new agent_sdk session code path
   (Part A's `model-router` change below) — the SDK's dual-write
@@ -142,13 +191,18 @@ supportSession:
   — worth calling out explicitly in `context-mode.md` since it's an easy
   footgun (works in local dev on one machine, silently fails to resume
   once deployed across multiple hosts/replicas).
-- `mirror_error` handling: when a step's `ClaudeSDKClient` yields a
-  `{type: "system", subtype: "mirror_error"}` message, log it at
-  `Scope.WARNING` (ties into Part B's observability work — same
-  `log()` call site) rather than letting it pass through silently in
-  the message stream. Store durability failures should be visible to
-  whoever's operating this accelerator, not just discoverable by a
-  failed resume later.
+- `mirror_error` handling: **confirmed against SDK source** — this is a
+  real typed message class, `MirrorErrorMessage(SystemMessage)`
+  (types.py:1263), carrying `key: SessionKey | None` and `error: str`
+  (:1275-1276), emitted when a `SessionStore.append()` call fails.
+  Detect it via `isinstance(message, MirrorErrorMessage)` in the
+  `receive_response()`/`receive_messages()` loop, not by pattern-matching
+  a raw `{type: "system", subtype: "mirror_error"}` dict — log
+  `message.error`/`message.key` at `Scope.WARNING` (ties into Part B's
+  observability work — same `log()` call site) rather than letting it
+  pass through silently in the message stream. Store durability
+  failures should be visible to whoever's operating this accelerator,
+  not just discoverable by a failed resume later.
 
 ### `capability_registry.yaml` change
 
@@ -213,11 +267,43 @@ Revised design:
   per strategy (`turn_count`, `token_budget`, `none`). Applied before
   each step's turn on the open `ClaudeSDKClient` when in session mode,
   trimming/summarizing the accumulated context per the process's (or
-  `.env` default's) configured strategy — exact trim mechanics depend
-  on what `ClaudeSDKClient` exposes for inspecting/mutating its own
-  turn history; confirm at implementation time. `token_budget` needs a
-  token-counting helper — reuse whatever the `anthropic`/
-  `claude_agent_sdk` package already exposes rather than writing a new
+  `.env` default's) configured strategy.
+
+  **Resolved gap, confirmed against `claude_agent_sdk==0.2.140`
+  source**: `ClaudeSDKClient` exposes no method to inspect or mutate its
+  own turn history mid-session. The only relevant surfaces are
+  `get_context_usage()` (client.py:471 — read-only token breakdown by
+  category, useful for `token_budget`'s measurement but not for
+  trimming) and `ConversationResetMessage` (types.py:1417 — a full reset
+  signal: "messages after the reset carry a new `session_id`", i.e. it
+  starts a fresh conversation, it does not selectively drop old turns).
+  There is no partial-truncate API. This means `turn_count`/
+  `token_budget` **cannot be implemented as in-place history surgery on
+  an open `ClaudeSDKClient`** as originally envisioned — the only
+  SDK-native lever is closing the current client and reopening a new one
+  with `resume=<session_id>`, `fork_session=True` isn't relevant here
+  (that's for branching, not trimming), so trimming in this repo must
+  work at a **higher level than the SDK client**: `core.py`'s trimming
+  dispatcher tracks step-level metadata itself (turn count via a simple
+  counter incremented per `query()` call in the step loop; token usage
+  via `get_context_usage()` polled after each step) and, when a
+  strategy's threshold is crossed, the step loop closes the current
+  `ClaudeSDKClient` and starts a **new session with a synthesized
+  system-prompt-level summary of dropped turns** rather than a
+  raw resume — i.e. trimming is implemented as this accelerator's own
+  session-rotation logic on top of `ClaudeSDKClient`, not a call into
+  any SDK trim primitive, because no such primitive exists. `strategy:
+  "none"` needs no rotation logic at all — pure pass-through, same as
+  today. Document this rotation behavior prominently in
+  `context-mode.md` since it is a real architectural constraint, not an
+  implementation detail: it means trimming a `context_mode: "session"`
+  process is not free — it costs a session boundary (a real `resume`
+  cycle with the associated `session_store` mirror round-trip when one
+  is configured), so `trimming.max_turns`/`token_budget` thresholds
+  should be set generously, not aggressively, to avoid unnecessary
+  session churn.
+  `token_budget` needs a token-counting helper for the summary/budget
+  math — reuse `get_context_usage()`'s totals rather than writing a new
   tokenizer.
 
 ### `model-router` / backend change
@@ -225,11 +311,16 @@ Revised design:
 `model-router/src/model_router_accelerator/backends.py` needs a new
 code path (or a variant of `call_agent_sdk()`) that opens/reuses a
 `ClaudeSDKClient` instead of calling the stateless `query()` helper,
-for `context_mode: "session"` steps — check the installed
-`claude_agent_sdk` version's exact `ClaudeSDKClient` API (constructor
-args, `resume` support, `session_store` support, how it surfaces its
-own session id after a turn) before finalizing this. `context_mode:
-"threaded"` steps keep using today's `query()` call, unchanged.
+for `context_mode: "session"` steps. Confirmed against installed
+`claude_agent_sdk==0.2.140`: constructor is
+`ClaudeSDKClient(options: ClaudeAgentOptions | None, transport: Transport | None)`;
+`resume`/`session_store`/`session_store_flush` are all
+`ClaudeAgentOptions` fields (see "`session_store` resolution" section
+above for exact field names/line refs); the client surfaces its own
+session id via `ResultMessage.session_id` (required field) after the
+final step's `receive_response()` drains, or per-turn via
+`AssistantMessage.session_id`. `context_mode: "threaded"` steps keep
+using today's `query()` call, unchanged.
 
 The `ClaudeSDKClient` construction takes the resolved `session_store`
 object (per the "`session_store` resolution" design section above)
@@ -265,9 +356,15 @@ implementation, before considering this done.
 
 ## Files to touch
 
-- `config/process_registry.yaml` — add `context_mode`/`trimming`/
-  `session_store` to at least one example process (new, don't retrofit
-  existing ones unless demonstrating the feature).
+- `config/process_registry.yaml` — new dedicated `supportSession`
+  process (own prompt YAML(s) under `prompts/`, not reusing
+  `templatingDemo`'s) demonstrating `context_mode`/`trimming`/
+  `session_store` — resolved this session, see cross-cutting "dedicated
+  example files" section; don't retrofit existing processes.
+- New dedicated `examples/run_support_session.py` — demonstrates a
+  cross-call resume (`execute()` called twice, second call passing back
+  the first's returned `session_id`) and a `session_store: {backend:
+  memory}` config.
 - `config/capability_registry.yaml` — whitelist `resume`/`session_id`
   under `agent_sdk.allowed`.
 - `.claude/rules/capability-registry.md` — remove the now-stale
@@ -369,11 +466,21 @@ standalone doc.
   `response.stop_reason`, `response.model` (actual model served —
   matters because of the fallback chain), `response.id`.
 - **`agent_sdk`** (`backends.py:96-106`): currently only pattern-matches
-  `AssistantMessage`. Also match `ResultMessage` (and check the
-  installed `claude_agent_sdk` types module for where usage/session_id
-  actually live on SDK message types before finalizing field names) —
-  confirm this doesn't silently no-op if the SDK's usage shape differs
-  from messages_api's.
+  `AssistantMessage`. Also match `ResultMessage` — confirmed against
+  `claude_agent_sdk==0.2.140` source: `ResultMessage` (types.py:1319)
+  carries `session_id: str` (required), `stop_reason`, `total_cost_usd`,
+  `usage: dict[str, Any]`, `model_usage: dict[str, ModelUsage]`
+  (per-model token/cost breakdown, already computed by the SDK — use
+  this directly for the fallback-chain transition logging below instead
+  of hand-tracking it), `errors`, `terminal_reason`. Prefer
+  `ResultMessage`'s fields over `AssistantMessage`'s per-turn `usage`/
+  `stop_reason`/`session_id` (types.py:1126-1129) for the step's final
+  captured values — `ResultMessage` is the SDK's own end-of-turn
+  summary, not a value this code has to aggregate itself. The two
+  backends' `usage` dict shapes differ (`agent_sdk`'s is SDK-internal;
+  `messages_api`'s mirrors `response.usage`'s named integer fields) —
+  normalize both into the one structured shape below rather than
+  passing either dict through raw.
 - **Return shape**: both `call_agent_sdk()`/`call_messages_api()`
   currently return a bare `text: str` (`backends.py:123`, `:202`) — no
   path exists today to carry usage/latency/stop_reason up to
@@ -414,13 +521,27 @@ or the other.
 This is a **breaking change** to `execute()`'s contract — today's
 docstring (`project-accelerator/src/project_accelerator/core.py:367-369`)
 promises `{step_name: validated_output}` (bare string per step); every
-existing caller (`examples/sample_usage.py`, `tests/test_sample_pipeline.py`,
-any scaffolded project built on `cpa new`) reads that value as a string
-and will break the moment it becomes a dict. Treat this as a deliberate,
-called-out breaking change — update every in-repo caller in the same
-change, and call it out prominently in whatever changelog/release note
-this project keeps, since it will break scaffolded projects on upgrade
-too if they don't re-pull scaffold_data.
+existing caller (`examples/run_ticket_classification.py`,
+`tests/test_sample_pipeline.py`, any scaffolded project built on
+`cpa new`) reads that value as a string and will break the moment it
+becomes a dict. Treat this as a deliberate, called-out breaking change —
+update every in-repo caller in the same change.
+
+**Resolved gap (this session)**: confirmed no `CHANGELOG*` file exists
+anywhere in this repo today (checked repo root). "Call it out in
+whatever changelog this project keeps" had nothing to land in. Add a
+new root `CHANGELOG.md` (Keep a Changelog style, since none exists to
+match) as part of Part B's change, with an `## Unreleased` /
+`## [next-version] — Breaking` entry documenting the
+`results[step]`-becomes-a-dict change, the `results[step]["output"]`
+migration path, and a pointer to re-run `cpa new`/re-pull
+`scaffold_data` for already-scaffolded projects. This file then becomes
+the standing location for Parts A/C/D's own additive-but-notable changes
+too (new `context_mode`/`assistant_prompt`/`stream` keys are additive/
+backward-compatible, not breaking, but still worth a changelog line so
+downstream projects know a `scaffold_data` re-pull adds new capability).
+Add `CHANGELOG.md` to the "Files to touch" list below and to the
+cross-cutting docs-alignment section.
 
 New shape per step, replacing the bare string:
 
@@ -473,9 +594,13 @@ New shape per step, replacing the bare string:
   since today it does `out for name, out in results.items()` assuming
   `out` is already a string; add the `MODEL_CALL_END` `log()` call here
   too, reusing the same captured fields for both surfaces.
-- `examples/sample_usage.py`, `tests/test_sample_pipeline.py` — update
-  every place that reads `results[step]` as a string to read
+- `examples/run_ticket_classification.py`, `tests/test_sample_pipeline.py`
+  — update every place that reads `results[step]` as a string to read
   `results[step]["output"]`.
+- New root `CHANGELOG.md` (none exists today — confirmed this session)
+  — `## Unreleased` / `## [next-version] — Breaking` entry documenting
+  the `results[step]` shape change, migration path, and re-scaffold
+  pointer for existing `cpa new` projects.
 - `project-accelerator/src/project_accelerator/scaffold_data/...` —
   mirror the `backends.py`/`core.py`/example changes (scaffold-sync rule
   in `CLAUDE.md`) — scaffolded projects' own examples must match too.
@@ -568,14 +693,18 @@ seed turn declared in config, not a live conversation.
   `call_agent_sdk()`/`call_messages_api()` accept the optional assistant
   seed content and build the message array accordingly (or raise, per
   the agent_sdk caveat above).
-- A new example prompt YAML demonstrating `assistant_prompt` (e.g.
-  added to `templatingDemo` alongside `triage`/`escalate`, or its own
-  step) — `.claude/rules/prompt-yaml.md` (if it exists) or
-  `process-registry.md`'s "Runtime input & `{{key}}` placeholders"
-  section gets a short addition documenting the field.
+- **Resolved (this session, see cross-cutting "dedicated example
+  files" section)**: a new dedicated prompt YAML
+  (`prompts/fewshot_seed.yaml`) demonstrating `assistant_prompt`, wired
+  to its own new step/process — not grafted onto `templatingDemo`. New
+  dedicated `examples/run_assistant_seed.py`. — `.claude/rules/
+  prompt-yaml.md` (if it exists) or `process-registry.md`'s "Runtime
+  input & `{{key}}` placeholders" section gets a short addition
+  documenting the field.
 - `project-accelerator/src/project_accelerator/scaffold_data/...` —
-  mirror `prompt_manager.py`/`core.py`/`backends.py` changes and the new
-  example (scaffold-sync rule in `CLAUDE.md`).
+  mirror `prompt_manager.py`/`core.py`/`backends.py` changes, the new
+  dedicated prompt YAML, and the new dedicated example script
+  (scaffold-sync rule in `CLAUDE.md`).
 
 ### Verification
 
@@ -622,7 +751,18 @@ follow-ups.
 - New optional step key `stream: true` in `process_registry.yaml`,
   capability-passthrough tier (same as `max_turns`/`thinking`) —
   whitelisted per backend in `capability_registry.yaml`. Omitted =
-  today's fully-buffered behavior, byte-for-byte unchanged.
+  today's fully-buffered behavior, byte-for-byte unchanged. On the
+  `agent_sdk` side this passthrough sets `ClaudeAgentOptions.
+  include_partial_messages = True` under the hood (see "Design" below)
+  — `capability_registry.yaml`'s `agent_sdk.allowed` list should whitelist
+  the process-facing key `stream`, not `include_partial_messages`
+  itself, keeping the YAML-facing capability name backend-neutral.
+  **Note for whoever implements this**: the public SDK doc page
+  (`code.claude.com/docs/en/agent-sdk/python`) states `query()` "does
+  not return granular text chunk events" — that is stale/wrong against
+  the installed `0.2.140` source, which has `include_partial_messages`.
+  Trust the installed package's `types.py`, re-verify against source on
+  every SDK version bump rather than the doc page.
 - `execute()`'s payload gains an optional `on_chunk` callback (sync or
   async callable, `(step_name: str, chunk: str) -> None`). When a
   step has `stream: true` and the caller supplied `on_chunk`, `core.py`
@@ -639,11 +779,28 @@ follow-ups.
   caller, not a new data shape flowing between steps. This keeps Part
   D fully orthogonal to the `{{<stepName>_output}}` threading mechanism
   (`process-registry.md`'s existing rule) — no change needed there.
-- `call_agent_sdk()`: when `stream=True` extra kwarg is set, invoke
-  `on_chunk` per `TextBlock.text` inside the existing
-  `async for message in query(...)` loop (`:96-102`) instead of only
-  concatenating — no new SDK call shape needed, since it already
-  streams internally; this is just exposing what's already flowing.
+- `call_agent_sdk()`: **correction, confirmed against
+  `claude_agent_sdk==0.2.140` source** — the original draft assumed
+  `query()` already streams internally with nothing to expose beyond
+  concatenating `TextBlock.text`. That undersells what the SDK offers:
+  `ClaudeAgentOptions.include_partial_messages: bool = False`
+  (types.py:2144), when set `True`, makes both `query()` and
+  `ClaudeSDKClient` additionally yield `StreamEvent` messages
+  (types.py:1360 — `{uuid, session_id, event: dict, parent_tool_use_id}`,
+  where `event` is the raw Anthropic API stream event, i.e. the same
+  `content_block_delta`/etc. shape `messages_api`'s SSE stream produces)
+  interleaved with the normal `AssistantMessage`/`ResultMessage` stream.
+  When `stream=True` extra kwarg is set on the `agent_sdk` call, set
+  `include_partial_messages=True` on the constructed
+  `ClaudeAgentOptions` and invoke `on_chunk` per `StreamEvent.event`'s
+  text-delta payload inside the existing message loop (`:96-102`),
+  instead of only pattern-matching `TextBlock.text` off completed
+  `AssistantMessage`s — still accumulate the final concatenated text
+  from the completed messages for `results[step]["output"]`, unchanged.
+  This mechanism is identical for `context_mode: "threaded"` (`query()`)
+  and `context_mode: "session"` (`ClaudeSDKClient`) steps, since
+  `include_partial_messages` is a `ClaudeAgentOptions` field either way
+  — Part D is fully orthogonal to Part A's client-lifecycle change.
 - `call_messages_api()`: when `stream=True`, switch to
   `client.messages.stream(...)` (or `messages.create(..., stream=True)`
   per whatever the installed `anthropic` SDK version's streaming
@@ -657,23 +814,28 @@ follow-ups.
 
 ### Files to touch
 
-- `config/process_registry.yaml` — add a `stream: true` example (e.g.
-  a new step, or documented as a comment like `cache_control`'s worked
-  example).
+- `config/process_registry.yaml` — new dedicated step (own prompt YAML)
+  with `stream: true` set — not a comment-only example (resolved this
+  session, see cross-cutting "dedicated example files" section).
 - `config/capability_registry.yaml` — whitelist `stream` for both
   `agent_sdk` and `messages_api`.
 - `model-router/src/model_router_accelerator/backends.py` — both
   `call_*` functions accept `stream` + an internal chunk-emission
-  callback, forward chunks when set.
+  callback, forward chunks when set (`agent_sdk` via
+  `include_partial_messages=True` + `StreamEvent.event` parsing, per
+  the "Design" section above).
 - `orchestration_accelerator/core.py` — thread the caller's `on_chunk`
   from `execute()`'s payload down to the backend call for whichever
   step(s) have `stream: true`; no-op accumulation path when no callback
   supplied.
+- New dedicated `examples/run_streaming.py` printing chunks as they
+  arrive via `on_chunk`.
 - `.claude/rules/` — new short doc (or a section in
   `capability-registry.md`) documenting `stream`/`on_chunk`, mirroring
   the `cache_control` documentation style.
 - `project-accelerator/src/project_accelerator/scaffold_data/...` —
-  mirror all of the above (scaffold-sync rule in `CLAUDE.md`).
+  mirror all of the above, including the new dedicated prompt YAML and
+  example script (scaffold-sync rule in `CLAUDE.md`).
 
 ### Verification
 
@@ -692,6 +854,93 @@ follow-ups.
   regression (`tests/test_sample_pipeline.py` unmodified, still green).
 - Run `pytest tests/test_sample_pipeline.py` plus new tests.
 - Run `python project-accelerator/scripts/check_scaffold_sync.py`.
+
+## Cross-cutting: dedicated example files per new feature (new, this session)
+
+User decision (this session): every new feature (Parts A–D) must ship
+with its own **dedicated** example files in both the repo root and the
+`cpa`-generated scaffold — not folded as a commented-out block or an
+extra step bolted onto the existing `templatingDemo`/
+`run_ticket_classification.py` worked example. Several "Files to touch"
+sections above (pre-edit) said things like "added to `templatingDemo`
+alongside `triage`/`escalate`, or its own step" — too vague, and
+contradicts the repo's own existing convention: `scaffold_data/prompts/`
+already has one dedicated YAML per use case (`ticket_triage.yaml`,
+`verify_kyc.yaml`, `escalation_decision.yaml`, etc., not everything
+crammed into one shared file), and `examples/` already has one runnable
+`.py` per scenario (`run_ticket_classification.py`,
+`run_orchestration_accelerator_example.py`), not one giant demo script.
+Each Part must follow that same one-file-per-feature convention:
+
+- **Part A (`context_mode: session`)**: new dedicated process entry in
+  `config/process_registry.yaml` (e.g. `supportSession`, matching the
+  worked example already sketched in this plan's "Design" section) —
+  its own prompt YAML(s) under `prompts/`, not reusing
+  `ticket_triage.yaml`/`templatingDemo`'s prompts. New dedicated runnable
+  example `examples/run_support_session.py` demonstrating: opening a
+  `context_mode: session` process, a cross-call resume (call `execute()`
+  twice, second call passing back the first's returned `session_id`),
+  and (if `session_store` is demoed) a `backend: memory` session store
+  configured on the process. Mirrored into
+  `project-accelerator/src/project_accelerator/scaffold_data/` as its
+  own prompt file(s) + its own process entry in the scaffolded
+  `process_registry.yaml`, plus the scaffold's own copy of the example
+  script (check where `cpa new` currently places example scripts in a
+  freshly scaffolded project — likely
+  `scaffold_data/examples/` or `scaffold_data/docs/` — before adding a
+  new example there; use whatever mechanism scaffold currently uses for
+  `run_ticket_classification.py`'s scaffold counterpart).
+- **Part B (structured return / observability)**: no new process needed
+  (this changes the return shape of every existing call) — but the
+  existing `examples/run_ticket_classification.py` (and its scaffold
+  mirror) must be updated in place to read `results[step]["output"]`
+  and print at least one of the new fields (`usage`, `stop_reason`,
+  `model_used`) so the new contract is demonstrated, not just silently
+  compatible.
+- **Part C (`assistant_prompt` seed turn)**: new dedicated prompt YAML
+  (e.g. `prompts/fewshot_seed.yaml`) with `assistant_prompt` set,
+  referenced by a new dedicated step/process (not grafted onto
+  `templatingDemo.escalate`, contra this plan's earlier "or its own
+  step" hedge — resolved: always its own step, in its own file). New
+  dedicated `examples/run_assistant_seed.py`. Mirrored into
+  `scaffold_data/prompts/` + scaffold's `process_registry.yaml` + the
+  scaffold's example script location, same as Part A.
+- **Part D (`stream: true`)**: new dedicated step (own prompt YAML) with
+  `stream: true` set, new dedicated `examples/run_streaming.py`
+  demonstrating an `on_chunk` callback printing chunks as they arrive
+  (not just accumulating). Mirrored into scaffold the same way.
+
+Each dedicated example script must be added to whatever this repo uses
+as its example-discovery/README index (check `examples/`'s own
+directory listing or a root `README.md` "Examples" section if one
+exists) so it's discoverable, not an orphaned file. Add "new dedicated
+example file(s), mirrored to scaffold_data" as an explicit checklist
+item in each Part's "Files to touch" section — see the per-part edits
+below.
+
+**Confirmed gap, `check_scaffold_sync.py` needs a new check function**:
+read the actual script (`project-accelerator/scripts/
+check_scaffold_sync.py`) this session — `EXACT_SYNCED_PAIRS` (:34) only
+covers `.claude/rules/*.md` and the two root `config/*.yaml` files;
+`check_examples_referenced()` (:171) only checks that `templatingDemo`'s
+process name/steps and `dummyDemoSkill` exist in both places, plus
+`.mcp.json`/the team-guide docx. **Nothing checks `examples/*.py` or
+`prompts/*.yaml` for presence/parity between repo root and
+`scaffold_data/`** — so every new dedicated example this plan adds
+(`run_support_session.py`, `run_assistant_seed.py`, `run_streaming.py`,
+plus their prompt YAMLs) ships with zero automated drift protection
+unless the script is extended. Add this as an explicit "Files to touch"
+item on **every Part that adds a dedicated example** (A, C, D): extend
+`check_scaffold_sync.py` with a new `check_new_example_scripts_mirrored()`
+(or fold into `check_examples_referenced()`) that asserts each new
+`examples/run_*.py` this plan introduces has a scaffold-side counterpart
+(exact placement TBD — confirm at implementation time whether `cpa new`
+copies `examples/` as-is or scaffold keeps its own trimmed set), and
+that each new dedicated `prompts/*.yaml` this plan introduces exists
+under `scaffold_data/prompts/` too. Without this, "mirror to
+scaffold_data" stays an unenforced, easily-forgotten manual step exactly
+like the `sample_usage.py` naming drift already found stale in this
+plan doc before this session's edits.
 
 ## Cross-cutting: keep docs and examples aligned (applies to Parts A–D)
 
@@ -713,8 +962,10 @@ and examples updated in the same change, not as a follow-up:
   - `config/process_registry.yaml`'s own inline comments (its existing
     style — see `templatingDemo.escalate`'s heavily-commented worked
     example) for at least one example process per new feature.
-  - `examples/sample_usage.py` (or wherever the worked runnable example
-    lives) — must call `execute()` using the **new** return shape
+  - `examples/run_ticket_classification.py` (the actual worked runnable
+    example in this repo — plan text elsewhere in this doc referred to a
+    `sample_usage.py` that does not exist; corrected here) — must call
+    `execute()` using the **new** return shape
     (Part B) and demonstrate at least one of the newer capabilities
     where it fits naturally, not left calling the old bare-string
     contract.

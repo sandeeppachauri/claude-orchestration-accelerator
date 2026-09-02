@@ -104,6 +104,8 @@ def _write_env_file(dest: Path) -> None:
         "ENVIRONMENT=local\n"
         "# ANTHROPIC_API_KEY=sk-ant-api...   # required once ENVIRONMENT != local/dev\n"
         "DEFAULT_MODEL=claude-sonnet-5\n"
+        "# DEFAULT_TRIMMING_STRATEGY=none   # turn_count | token_budget | none -- fallback for a\n"
+        "#   context_mode: session process that omits its own `trimming` block\n"
     )
 
 
@@ -423,6 +425,51 @@ section for the full pattern.
 """
     )
 
+    advanced_features_section = (
+        """
+## Advanced step/process features
+
+Three optional process/step features beyond static `{{key}}` templating,
+each with a shipped worked config example (steps + prompt) here, and a
+runnable driver script of the same shape in the
+`claude-orchestration-accelerator` source repo's own `examples/`
+directory (`run_support_session.py` / `run_assistant_seed.py` /
+`run_streaming.py` -- copy the pattern, adjusting the `process` name to
+match this project's own registry):
+
+1. **`context_mode: session`** -- a real, accumulating `agent_sdk`
+   conversation across steps instead of `{{<stepName>_output}}`
+   templating (see `supportSession` in `config/process_registry.yaml` and
+   `prompts/support_intake.yaml` / `prompts/support_diagnose.yaml`).
+   Full mechanics, `trimming`, and `session_store` in
+   `.claude/rules/context-mode.md`.
+
+2. **`assistant_prompt`** -- a fixed few-shot assistant turn seeded
+   before the user turn, `messages_api`-only (see `fewshotLabeling` in
+   `config/process_registry.yaml` and `prompts/fewshot_seed.yaml`).
+   Schema in `.claude/rules/process-registry.md`.
+
+3. **`stream: true`** -- emits chunks to `execute()`'s payload
+   `on_chunk` callback as they arrive, on both backends (see
+   `streamingDemo` in `config/process_registry.yaml` and
+   `prompts/streaming_narrate.yaml`). Full mechanics in
+   `.claude/rules/streaming.md`.
+"""
+        if include_samples
+        else """
+## Advanced step/process features
+
+Three optional process/step features beyond static `{key}` templating --
+`context_mode: session` (a real, accumulating `agent_sdk` conversation
+across steps), `assistant_prompt` (a fixed few-shot assistant turn,
+`messages_api`-only), and `stream: true` (chunk emission via
+`execute()`'s payload `on_chunk` callback). This scaffold was created
+with `--sample-needed no`, so the worked examples are not included here
+-- see `.claude/rules/context-mode.md`, `.claude/rules/process-registry.md`
+(`assistant_prompt` section), and `.claude/rules/streaming.md`.
+"""
+    )
+
     getting_started_steps = (
         """1. Create/activate a virtualenv and make sure the four accelerator
    packages are installed into it (`cpa new` already did this for the
@@ -505,6 +552,19 @@ a running pipeline.
 
 {getting_started_steps}
 
+## `execute()`'s return value
+
+```python
+result = execute({{"process": {env_example_process!r}, "input": "...", "backend": "agent_sdk"}})
+```
+
+`result` is `{{step_name: {{output, model_used, stop_reason, usage,
+tool_calls, request_id, latency_ms}}, ...}}` -- one entry per step run.
+`output` is the validated text for that step; the rest is metadata about
+the model call that produced it (`tool_calls` is agent_sdk-only, empty
+on `messages_api`; `request_id` is messages_api-only, `None` on
+agent_sdk). Access a step's text as `result[step_name]["output"]`.
+
 ## File-by-file
 
 - **`config/process_registry.yaml`** -- the single source of truth for every
@@ -524,6 +584,7 @@ a running pipeline.
   prompt text can be reviewed/edited independently of step wiring.
 
 {templating_section}
+{advanced_features_section}
 Full capability-passthrough key reference (any step key besides
 `prompt`/`model`/`fallback`/`system_prompt` flows straight through to the
 model call, after passing `config/capability_registry.yaml`'s per-backend
@@ -549,6 +610,9 @@ whitelist -- see `.claude/rules/process-registry.md` and
 | `max_tokens` | `messages_api` | response token cap |
 | `stop_sequences` | `messages_api` | strings that stop generation |
 | `cache_control` | `messages_api` | Anthropic prompt-cache breakpoint on the system prompt, e.g. `{{type: ephemeral, ttl: 5m}}`; agent_sdk caches automatically/opaquely and has no equivalent field |
+| `resume` | `agent_sdk` | session id to resume -- only meaningful for `context_mode: session` processes, see `.claude/rules/context-mode.md` |
+| `session_id` | `agent_sdk` | same as `resume`; session-management concern, agent_sdk-only |
+| `stream` | `agent_sdk` / `messages_api` | emit chunks to `execute()`'s payload `on_chunk` callback as they arrive, see `.claude/rules/streaming.md` |
 
 See `.claude/rules/mcp-scope.md` (`mcp_servers`/`allowed_tools`/`skills`)
 and `.claude/rules/guardrails-registry.md` (`guardrails`) for full detail
@@ -598,7 +662,7 @@ once via that environment's `.env` and omits `"environment"` from every
 call, relying on the payload -> `.env` -> `"local"` fallback.
 
 - **`logger_config.json`** -- turns the default JSON-line tracing wrapper's
-  8 logging scopes on/off. Logging is on by default -- `execute()` loads
+  10 logging scopes on/off. Logging is on by default -- `execute()` loads
   this file automatically before its first log call, so editing
   `enabled_scopes` here takes effect with no code change. Trace lines
   land under `./logs/trace.log` (path/rotation also configurable here).
@@ -692,8 +756,9 @@ def main() -> None:
     print(f"Running process '{process_name}' -- steps: {process['steps']}")
 
     result = run(process_name, input_text)
-    for step_name, output in result.items():
-        print(f"[{step_name}] -> {output!r}")
+    for step_name, step_result in result.items():
+        print(f"[{step_name}] -> {step_result['output']!r}")
+        print(f"    model_used={step_result['model_used']} usage={step_result['usage']}")
     print("Trace logged to ./logs/trace.log (see logger_config.json).")
 
 
@@ -1046,7 +1111,7 @@ def test_ticket_classification_classify_step():
     })
 
     assert "classify" in result
-    category = result["classify"]
+    category = result["classify"]["output"]
 
     pm = PromptManager()
     cfg = pm.get("classify", filename="classify.yaml")

@@ -20,10 +20,10 @@
 agent_sdk:
   # Named fields on claude_agent_sdk.ClaudeAgentOptions that are safe to
   # set per-step from process_registry.yaml. Deliberately NOT the full
-  # field list -- fields like cli_path/env/hooks/resume/session_id/
-  # can_use_tool are internal/session-management concerns, not per-step
-  # model-call tuning, so they stay off this whitelist even though the
-  # dataclass technically accepts them.
+  # field list -- fields like cli_path/env/hooks/can_use_tool are
+  # internal/session-management concerns, not per-step model-call
+  # tuning, so they stay off this whitelist even though the dataclass
+  # technically accepts them.
   allowed:
     - max_turns
     - thinking
@@ -31,6 +31,20 @@ agent_sdk:
     - effort
     - permission_mode
     - fallback_model
+    # Session-management concerns -- whitelisted here because
+    # context_mode: session (see .claude/rules/context-mode.md)
+    # constructs ClaudeAgentOptions with resume=<caller-supplied
+    # session_id> for cross-call continuation. Only meaningful when the
+    # process sets context_mode: session; ignored under the default
+    # "threaded" mode. messages_api has no native session concept, so
+    # these are agent_sdk-only, same as everywhere else in this file.
+    - resume
+    - session_id
+    # Emits chunks to execute()'s payload["on_chunk"] callback as they
+    # arrive (via ClaudeAgentOptions.include_partial_messages under the
+    # hood), instead of only returning the fully-buffered text after the
+    # whole turn completes. See .claude/rules/streaming.md.
+    - stream
     # Native ClaudeAgentOptions.tools passthrough -- the full built-in
     # toolset (Read/Write/Edit/Bash/...) available to the model, distinct
     # from mcp_servers/allowed_tools below (which only ever narrow MCP
@@ -72,3 +86,7 @@ messages_api:
     # process-specific and supplied per-step in config/process_registry.yaml,
     # not here. See .claude/rules/capability-registry.md.
     - cache_control
+    # Emits chunks to execute()'s payload["on_chunk"] callback as they
+    # arrive (via anthropic's messages.stream() streaming helper under
+    # the hood). See .claude/rules/streaming.md.
+    - stream

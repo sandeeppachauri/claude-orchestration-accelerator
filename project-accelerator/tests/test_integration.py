@@ -14,6 +14,19 @@ import project_accelerator.core as core_module
 from project_accelerator import execute
 
 
+def _result(text, model="claude-haiku-4-5-20251001"):
+    return {
+        "text": text,
+        "model_used": model,
+        "usage": {},
+        "stop_reason": "end_turn",
+        "request_id": None,
+        "latency_ms": 0.0,
+        "session_id": None,
+        "tool_calls": [],
+    }
+
+
 @pytest.fixture(autouse=True)
 def _patch_logging(monkeypatch):
     async def _fake_log(*args, **kwargs):
@@ -38,7 +51,7 @@ def test_full_ticket_classification_pipeline(monkeypatch):
 
     async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
         calls.append((model, backend, environment))
-        return responses[len(calls) - 1]
+        return _result(responses[len(calls) - 1], model)
 
     monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
 
@@ -51,9 +64,9 @@ def test_full_ticket_classification_pipeline(monkeypatch):
         }
     )
 
-    assert result["classify"] == "technical"
-    assert result["extract"]["urgency"] == "medium"
-    assert "login crash" in result["respond"]
+    assert result["classify"]["output"] == "technical"
+    assert result["extract"]["output"]["urgency"] == "medium"
+    assert "login crash" in result["respond"]["output"]
     assert len(calls) == 3
     assert all(env == "local" for _, _, env in calls)
 
@@ -72,7 +85,7 @@ def test_onboarding_pipeline_messages_api_backend(monkeypatch):
     async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
         assert backend == "messages_api"
         calls.append(model)
-        return responses[len(calls) - 1]
+        return _result(responses[len(calls) - 1], model)
 
     monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
 
@@ -84,9 +97,9 @@ def test_onboarding_pipeline_messages_api_backend(monkeypatch):
         }
     )
 
-    assert result["welcome"] == "Welcome aboard!"
-    assert result["verify"] == "complete"
-    assert result["finalize"] == "Your onboarding is now complete."
+    assert result["welcome"]["output"] == "Welcome aboard!"
+    assert result["verify"]["output"] == "complete"
+    assert result["finalize"]["output"] == "Your onboarding is now complete."
 
 
 def test_single_step_narrowing_does_not_run_other_steps(monkeypatch):
@@ -94,7 +107,7 @@ def test_single_step_narrowing_does_not_run_other_steps(monkeypatch):
 
     async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
         calls.append(model)
-        return "billing"
+        return _result("billing", model)
 
     monkeypatch.setattr(core_module, "execute_with_fallback", _fake_execute_with_fallback)
 
