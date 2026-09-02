@@ -430,30 +430,27 @@ section for the full pattern.
 ## Advanced step/process features
 
 Three optional process/step features beyond static `{{key}}` templating,
-each with a shipped worked config example (steps + prompt) here, and a
-runnable driver script of the same shape in the
-`claude-orchestration-accelerator` source repo's own `examples/`
-directory (`run_support_session.py` / `run_assistant_seed.py` /
-`run_streaming.py` -- copy the pattern, adjusting the `process` name to
-match this project's own registry):
+each with a shipped worked config example (steps + prompt) and a
+runnable driver script under `examples/`:
 
 1. **`context_mode: session`** -- a real, accumulating `agent_sdk`
    conversation across steps instead of `{{<stepName>_output}}`
-   templating (see `supportSession` in `config/process_registry.yaml` and
-   `prompts/support_intake.yaml` / `prompts/support_diagnose.yaml`).
-   Full mechanics, `trimming`, and `session_store` in
-   `.claude/rules/context-mode.md`.
+   templating (see `supportSession` in `config/process_registry.yaml`,
+   `prompts/support_intake.yaml` / `prompts/support_diagnose.yaml`, and
+   `examples/run_support_session.py`). Full mechanics, `trimming`, and
+   `session_store` in `.claude/rules/context-mode.md`.
 
 2. **`assistant_prompt`** -- a fixed few-shot assistant turn seeded
    before the user turn, `messages_api`-only (see `fewshotLabeling` in
-   `config/process_registry.yaml` and `prompts/fewshot_seed.yaml`).
-   Schema in `.claude/rules/process-registry.md`.
+   `config/process_registry.yaml`, `prompts/fewshot_seed.yaml`, and
+   `examples/run_assistant_seed.py`). Schema in
+   `.claude/rules/process-registry.md`.
 
 3. **`stream: true`** -- emits chunks to `execute()`'s payload
    `on_chunk` callback as they arrive, on both backends (see
-   `streamingDemo` in `config/process_registry.yaml` and
-   `prompts/streaming_narrate.yaml`). Full mechanics in
-   `.claude/rules/streaming.md`.
+   `streamingDemo` in `config/process_registry.yaml`,
+   `prompts/streaming_narrate.yaml`, and `examples/run_streaming.py`).
+   Full mechanics in `.claude/rules/streaming.md`.
 """
         if include_samples
         else """
@@ -506,6 +503,18 @@ with `--sample-needed no`, so the worked examples are not included here
   `run_pipeline.py`), including the optional `"step"` and `"environment"`
   keys. Copy this pattern when you need to call a process from your own
   application code.
+
+- **`examples/run_support_session.py`** -- runnable `context_mode: session`
+  walkthrough (`supportSession`): one open conversation across steps, plus
+  cross-call `resume`. See "Advanced step/process features" above.
+
+- **`examples/run_assistant_seed.py`** -- runnable `assistant_prompt`
+  walkthrough (`fewshotLabeling`), `messages_api`-only. See "Advanced
+  step/process features" above.
+
+- **`examples/run_streaming.py`** -- runnable `stream: true` walkthrough
+  (`streamingDemo`) with a real `on_chunk` callback. See "Advanced
+  step/process features" above.
 
 """
         if include_samples
@@ -1032,6 +1041,204 @@ if __name__ == "__main__":
     )
 
 
+def _write_support_session_example(dest: Path, include_samples: bool = True) -> None:
+    if not include_samples:
+        return
+    examples_dir = dest / "examples"
+    examples_dir.mkdir(exist_ok=True)
+    (examples_dir / "run_support_session.py").write_text(
+        '''"""
+run_support_session.py
+
+Runnable example of context_mode: session (see .claude/rules/context-mode.md)
+-- a real, accumulating agent_sdk conversation across steps and across
+execute() calls, instead of the default context_mode: threaded's
+{{<stepName>_output}} text-templating.
+
+Demonstrates:
+  1. Opening the supportSession process -- intake and diagnose share one
+     open ClaudeSDKClient for the whole call; diagnose sees intake's turn
+     as real conversation history.
+  2. Cross-call resume -- a second, later execute() call passes back the
+     first call's returned session_id to continue the same conversation
+     from a brand-new call.
+  3. session_store: {backend: memory} -- supportSession's process config
+     mirrors the transcript to an in-memory SessionStore, which is what
+     makes cross-host/cross-container resume possible in production
+     (this example only demonstrates the wiring; a single local process
+     doesn't need it since local disk already has the transcript).
+
+Needs a credential (ANTHROPIC_API_KEY env var, or an ambient `claude
+login` OAuth session) resolved via claude-auth-accelerator.
+
+Run: python examples/run_support_session.py
+"""
+
+from __future__ import annotations
+
+from auth_accelerator.exceptions import AuthResolutionError
+from project_accelerator import execute
+
+
+def main() -> None:
+    try:
+        first = execute(
+            {
+                "process": "supportSession",
+                "input": "My app crashes every time I try to log in.",
+                "backend": "agent_sdk",
+                "environment": "local",
+            }
+        )
+    except AuthResolutionError as exc:
+        print(f"No credential resolved ({exc}). Set ANTHROPIC_API_KEY or run `claude login`.")
+        return
+
+    for step, step_result in first.items():
+        print(f"[{step}] {step_result['output']}")
+
+    session_id = first["diagnose"]["session_id"]
+    print(f"\\nsession_id from call 1: {session_id}")
+
+    print("\\n--- resuming the same conversation in a new execute() call ---")
+    second = execute(
+        {
+            "process": "supportSession",
+            "step": "diagnose",
+            "input": "It only happens on WiFi, not on cellular data.",
+            "backend": "agent_sdk",
+            "environment": "local",
+            "session_id": session_id,
+        }
+    )
+    print(f"[diagnose] {second['diagnose']['output']}")
+
+
+if __name__ == "__main__":
+    main()
+'''
+    )
+
+
+def _write_assistant_seed_example(dest: Path, include_samples: bool = True) -> None:
+    if not include_samples:
+        return
+    examples_dir = dest / "examples"
+    examples_dir.mkdir(exist_ok=True)
+    (examples_dir / "run_assistant_seed.py").write_text(
+        '''"""
+run_assistant_seed.py
+
+Runnable example of `assistant_prompt` (see .claude/rules/process-registry.md's
+"Runtime input & {{key}}" section) -- a canned prior assistant turn seeded
+before the real user turn, for few-shot priming or "continue from this
+canned response" patterns.
+
+Deliberately messages_api, not agent_sdk (unlike every other example in
+this directory, which default to agent_sdk): claude_agent_sdk's query()
+takes a single string prompt, not a message array, so there is no SDK
+surface to seed a prior assistant turn on agent_sdk. A step with
+assistant_prompt set raises UnsupportedCapabilityError before any model
+call if run with backend: agent_sdk -- this is not a config choice, it
+is a hard backend limitation, so this example cannot be switched to
+agent_sdk without breaking every run.
+
+Needs a credential (ANTHROPIC_API_KEY env var) resolved via
+claude-auth-accelerator -- messages_api has no ambient-OAuth path.
+
+Run: python examples/run_assistant_seed.py
+"""
+
+from __future__ import annotations
+
+from auth_accelerator.exceptions import AuthResolutionError
+from project_accelerator import execute
+
+
+def main() -> None:
+    try:
+        result = execute(
+            {
+                "process": "fewshotLabeling",
+                "step": "label",
+                "input": {"ticket_text": "The app crashes every time I try to log in."},
+                "backend": "messages_api",
+                "environment": "local",
+            }
+        )
+    except AuthResolutionError as exc:
+        print(f"No credential resolved ({exc}). Set ANTHROPIC_API_KEY.")
+        return
+
+    print(f"[label] {result['label']['output']}")
+
+
+if __name__ == "__main__":
+    main()
+'''
+    )
+
+
+def _write_streaming_example(dest: Path, include_samples: bool = True) -> None:
+    if not include_samples:
+        return
+    examples_dir = dest / "examples"
+    examples_dir.mkdir(exist_ok=True)
+    (examples_dir / "run_streaming.py").write_text(
+        '''"""
+run_streaming.py
+
+Runnable example of `stream: true` (see .claude/rules/streaming.md) --
+chunks emitted to execute()'s payload["on_chunk"] callback in real time
+as the model produces them, instead of only returning the fully-buffered
+text after the whole turn completes. Demonstrates agent_sdk's streaming
+path (the SDK's own include_partial_messages mechanism); the same
+on_chunk callback works unchanged on messages_api (its own
+messages.stream() context manager instead).
+
+Needs a credential (ANTHROPIC_API_KEY env var, or an ambient `claude
+login` OAuth session) resolved via claude-auth-accelerator.
+
+Run: python examples/run_streaming.py
+"""
+
+from __future__ import annotations
+
+from auth_accelerator.exceptions import AuthResolutionError
+from project_accelerator import execute
+
+
+def print_chunk(step_name: str, chunk: str) -> None:
+    print(chunk, end="", flush=True)
+
+
+def main() -> None:
+    print("Streaming chunks as they arrive:\\n")
+    try:
+        result = execute(
+            {
+                "process": "streamingDemo",
+                "step": "narrate",
+                "input": {"scenario": "a customer's login keeps failing on WiFi only"},
+                "backend": "agent_sdk",
+                "environment": "local",
+                "on_chunk": print_chunk,
+            }
+        )
+    except AuthResolutionError as exc:
+        print(f"No credential resolved ({exc}). Set ANTHROPIC_API_KEY or run `claude login`.")
+        return
+
+    print("\\n\\n--- full accumulated output (identical whether streamed or not) ---")
+    print(result["narrate"]["output"])
+
+
+if __name__ == "__main__":
+    main()
+'''
+    )
+
+
 def _write_sample_test(dest: Path, include_samples: bool = True) -> None:
     tests_dir = dest / "tests"
     tests_dir.mkdir(exist_ok=True)
@@ -1247,6 +1454,9 @@ def cmd_new(args: argparse.Namespace) -> None:
     _write_sample_usage(dest, include_samples)
     _write_file_upload_example(dest, include_samples)
     _write_batch_processing_example(dest, include_samples)
+    _write_support_session_example(dest, include_samples)
+    _write_assistant_seed_example(dest, include_samples)
+    _write_streaming_example(dest, include_samples)
     _write_sample_test(dest, include_samples)
 
     if args.python:
