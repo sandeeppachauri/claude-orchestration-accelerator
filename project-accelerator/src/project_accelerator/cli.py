@@ -557,6 +557,16 @@ with `--sample-needed no`, so the worked examples are not included here
 What each generated file is for, and how to get from a fresh checkout to
 a running pipeline.
 
+**Run everything from this project's root** (the folder this file's
+`docs/` sits in, alongside `config/`, `examples/`, `pipeline/`) --
+`config/process_registry.yaml` and `prompts/*.yaml` are resolved
+relative to the current working directory, not to where Python itself
+is installed. Running a script from any other directory (a different
+cwd in your terminal, an IDE launcher with its own working directory,
+etc.) raises a clear `RegistryFileNotFoundError` naming the exact path
+it looked for and telling you to `cd` here first -- it will not silently
+run against some other project's config.
+
 ## Getting started
 
 {getting_started_steps}

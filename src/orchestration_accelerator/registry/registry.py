@@ -59,6 +59,15 @@ class ProcessNotFoundError(Exception):
     """Raised when a requested process name has no block in process_registry.yaml."""
 
 
+class RegistryFileNotFoundError(Exception):
+    """Raised when the resolved process_registry.yaml path itself doesn't
+    exist on disk -- distinct from ProcessNotFoundError (a real registry
+    file was read, but the requested process name isn't in it). Conflating
+    the two makes "wrong working directory" indistinguishable from "typo'd
+    process name", which surfaces as a confusing prompt/config error many
+    layers away from the actual cause."""
+
+
 class StepNotFoundError(Exception):
     """Raised when a requested step name isn't in a process's `steps` list."""
 
@@ -96,7 +105,21 @@ def get_process(
     """Returns {id, description, steps, step_config} for a process, where
     step_config is {step_name: {prompt, model, fallback}, ...} for every
     name in `steps`."""
-    registry = load_registry(path)
+    resolved_path = Path(path)
+    if not resolved_path.exists():
+        raise RegistryFileNotFoundError(
+            friendly_error(
+                f"No process_registry.yaml found at {resolved_path} -- this "
+                f"usually means the script was run from the wrong working "
+                f"directory. cd into your scaffolded project's root (the "
+                f"folder containing config/process_registry.yaml) and "
+                f"re-run it from there.",
+                f"process_registry.yaml not found at {resolved_path} while "
+                f"resolving process {process!r}.",
+            )
+        )
+
+    registry = load_registry(resolved_path)
     if process not in registry:
         raise ProcessNotFoundError(
             friendly_error(
