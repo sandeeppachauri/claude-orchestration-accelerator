@@ -37,8 +37,9 @@ def main() -> None:
         print(f"[{step}] {step_result['output']}")
         print(
             f"    model_used={step_result['model_used']} "
-            f"stop_reason={step_result['stop_reason']} "
-            f"usage={usage} latency_ms={step_result['latency_ms']:.1f}"
+            f"input_tokens={usage['input_tokens']} "
+            f"output_tokens={usage['output_tokens']} "
+            f"latency_ms={step_result['latency_ms']:.1f}"
         )
 
 
