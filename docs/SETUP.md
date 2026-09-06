@@ -199,7 +199,8 @@ This generates, under `./my-app/` (or `<path>/my-app/` with `--path`):
 - `prompts/*.yaml`, `process_registry.yaml` (pre-populated with the
   `ticketClassification` and `onboarding` sample processes, plus
   `templatingDemo` unless `--sample-needed no` was passed)
-- `.env` (`ENVIRONMENT=local`, `DEFAULT_MODEL=claude-sonnet-5`)
+- `.env` (`ENVIRONMENT=local`, `ANTHROPIC_BASE_URL=https://api.anthropic.com`,
+  `DEFAULT_MODEL=claude-sonnet-5`)
 - `logger_config.json`
 - `pipeline/run_pipeline.py` (reads steps/config from `process_registry.yaml`
   — nothing hardcoded)

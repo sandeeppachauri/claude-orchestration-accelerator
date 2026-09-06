@@ -52,10 +52,10 @@ def _client(environment: str):
         raise BatchJobError(
             "The 'anthropic' package is required for batch processing."
         ) from exc
-    from auth_accelerator import build_api_credential
+    from auth_accelerator import build_api_credential, build_base_url
 
     api_key = build_api_credential(environment)
-    return anthropic.Anthropic(api_key=api_key)
+    return anthropic.Anthropic(api_key=api_key, base_url=build_base_url(environment))
 
 
 def _resolve_step(

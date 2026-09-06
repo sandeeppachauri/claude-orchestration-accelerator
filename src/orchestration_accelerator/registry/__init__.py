@@ -3,8 +3,10 @@ from __future__ import annotations
 from .registry import (
     DEFAULT_CAPABILITY_REGISTRY_PATH,
     DEFAULT_REGISTRY_PATH,
+    SYNTHESIS_STEP_NAMES,
     VALID_CONTEXT_MODES,
     InvalidContextModeError,
+    MissingSynthesisStepError,
     ProcessNotFoundError,
     RegistryFileNotFoundError,
     SessionStoreResolutionError,
@@ -22,8 +24,10 @@ from .registry import (
 __all__ = [
     "DEFAULT_CAPABILITY_REGISTRY_PATH",
     "DEFAULT_REGISTRY_PATH",
+    "SYNTHESIS_STEP_NAMES",
     "VALID_CONTEXT_MODES",
     "InvalidContextModeError",
+    "MissingSynthesisStepError",
     "ProcessNotFoundError",
     "RegistryFileNotFoundError",
     "SessionStoreResolutionError",

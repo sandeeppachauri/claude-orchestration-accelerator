@@ -87,6 +87,10 @@ in this path — it is entirely driven by the payload and by
 - A step may also set `stream: true` to emit chunks to `execute()`'s
   payload `on_chunk` callback as they arrive, on both backends — see
   `.claude/rules/streaming.md`.
+- A process may also set `parallel_processing: true` (default: `false`)
+  to run every step but the last concurrently, then reconcile all of
+  them via a mandatory trailing `synthesis_step`/`reconcile_step` — see
+  `.claude/rules/parallel-processing.md`.
 
 ## Running tests
 

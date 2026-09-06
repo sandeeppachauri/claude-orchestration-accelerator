@@ -158,6 +158,7 @@ def _resolve_step_configs(
             "context_mode": "threaded",
             "trimming": None,
             "session_store": None,
+            "parallel_processing": False,
         }
 
     steps = process["steps"]
@@ -179,6 +180,7 @@ def _resolve_step_configs(
         "context_mode": process["context_mode"],
         "trimming": process["trimming"],
         "session_store": process["session_store"],
+        "parallel_processing": process["parallel_processing"],
     }
     return step_configs, context
 
@@ -574,6 +576,139 @@ async def _execute_session_mode(
     return results
 
 
+async def _run_parallel_session_branch(
+    step_name: str,
+    step_config: dict[str, Any],
+    input_data: str | dict[str, Any],
+    environment: str,
+    session_id: str,
+    turn_index: int,
+    prompts_dir: Path,
+    session_store: Any | None,
+) -> Any:
+    """context_mode: session + parallel_processing: true counterpart to
+    _run_session_step() -- opens its own ClaudeSDKClient for this one
+    branch (concurrent branches cannot safely share a single client),
+    runs exactly one turn on it, then closes it. Unlike the shared-client
+    loop in _execute_session_mode(), there is no cross-branch turn
+    history here -- each parallel branch is its own single-turn
+    conversation, matching threaded-mode parallel branches' "no earlier
+    step's output available yet" semantics."""
+    model = step_config.get("model", "claude-sonnet-5")
+    system_prompt = step_config.get("system_prompt", "You are a helpful assistant.")
+    if step_config.get("prompt") is not None:
+        pm = PromptManager(prompts_dir=prompts_dir)
+        _, system_prompt, _, _ = pm.render(step_name, input_data, filename=step_config["prompt"])
+
+    client = await open_agent_sdk_session(
+        model=model,
+        system_prompt=system_prompt,
+        environment=environment,
+        max_turns=step_config.get("max_turns", 1),
+        resume=None,
+        session_store=session_store,
+    )
+    try:
+        return await _run_session_step(
+            client, step_name, step_config, input_data, session_id, turn_index, prompts_dir
+        )
+    finally:
+        await client.disconnect()
+
+
+async def _execute_parallel_mode(
+    steps_to_run: list[tuple[str, dict[str, Any]]],
+    context: dict[str, Any],
+    backend: str,
+    environment: str,
+    input_data: str | dict[str, Any],
+    session_id: str,
+    prompts_dir: Path,
+    on_chunk: Any | None,
+) -> dict[str, Any]:
+    """parallel_processing: true execution path -- every step but the
+    last in `steps_to_run` runs concurrently via asyncio.gather(), each
+    against the same original input_data (no earlier step's output
+    exists yet, same rule as the very first step of a sequential
+    process). The last step (validated at registry-load time to be named
+    'synthesis_step' or 'reconcile_step') then runs once every branch has
+    resolved, via the normal single-step call path -- it picks up every
+    branch's result as {{<stepName>_output}} through the exact same
+    templating core.py's threaded loop already does, no new plumbing
+    needed for that part.
+
+    Only reached when >=2 steps are selected to run; a single-step
+    (narrowed via payload["step"]) run never enters this path -- see
+    _execute_async()'s dispatch."""
+    *branch_steps, (synthesis_name, synthesis_config) = steps_to_run
+
+    if context["context_mode"] == "session" and backend != "agent_sdk":
+        raise UnsupportedCapabilityError(
+            friendly_error(
+                "This process uses context_mode: session, which only works "
+                "with the agent_sdk backend -- messages_api has no native "
+                "session concept.",
+                f"context_mode: session + parallel_processing: true + "
+                f"backend={backend!r} is unsupported. Set backend to "
+                f"'agent_sdk', or switch this process to context_mode: "
+                f"threaded to use messages_api.",
+            )
+        )
+
+    if context["context_mode"] == "session":
+        resolved_store = resolve_session_store(context.get("session_store"))
+        branch_results = await asyncio.gather(
+            *(
+                _run_parallel_session_branch(
+                    step_name, step_config, input_data, environment, session_id, turn_index,
+                    prompts_dir, resolved_store,
+                )
+                for turn_index, (step_name, step_config) in enumerate(branch_steps)
+            )
+        )
+    else:
+        branch_results = await asyncio.gather(
+            *(
+                _run_one_step(
+                    step_name, step_config, input_data, backend, environment, session_id,
+                    turn_index, prompts_dir, on_chunk,
+                )
+                for turn_index, (step_name, step_config) in enumerate(branch_steps)
+            )
+        )
+
+    results: dict[str, Any] = {
+        step_name: result for (step_name, _), result in zip(branch_steps, branch_results)
+    }
+
+    synthesis_input: str | dict[str, Any] = input_data
+    prompt_file = synthesis_config.get("prompt")
+    if prompt_file is not None:
+        pm = PromptManager(prompts_dir=prompts_dir)
+        if pm.has_placeholders(synthesis_name, filename=prompt_file):
+            synthesis_input = (
+                dict(input_data) if isinstance(input_data, dict) else {"input": input_data}
+            )
+            synthesis_input.update(
+                {f"{name}_output": out["output"] for name, out in results.items()}
+            )
+
+    synthesis_turn_index = len(branch_steps)
+    if context["context_mode"] == "session":
+        resolved_store = resolve_session_store(context.get("session_store"))
+        results[synthesis_name] = await _run_parallel_session_branch(
+            synthesis_name, synthesis_config, synthesis_input, environment, session_id,
+            synthesis_turn_index, prompts_dir, resolved_store,
+        )
+    else:
+        results[synthesis_name] = await _run_one_step(
+            synthesis_name, synthesis_config, synthesis_input, backend, environment, session_id,
+            synthesis_turn_index, prompts_dir, on_chunk,
+        )
+
+    return results
+
+
 async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
     # A fresh session_id up front means even a failure before any step
     # runs (bad payload shape, unknown process/step) still gets one
@@ -603,6 +738,22 @@ async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
             },
         )
         raise
+
+    # parallel_processing only makes sense with >=2 steps actually
+    # selected to run -- payload["step"] narrowing to a single step
+    # collapses back to the normal single-step call path unchanged,
+    # same as it already does for context_mode: session.
+    if context.get("parallel_processing") and len(steps_to_run) >= 2:
+        return await _execute_parallel_mode(
+            steps_to_run,
+            context,
+            backend,
+            environment,
+            input_data,
+            session_id,
+            prompts_dir,
+            payload.get("on_chunk"),
+        )
 
     if context["context_mode"] == "session":
         return await _execute_session_mode(

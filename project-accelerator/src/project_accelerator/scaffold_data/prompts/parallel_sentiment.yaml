@@ -1,0 +1,28 @@
+step: parallel_sentiment
+version: 1
+scope:
+  in_bounds:
+    - "Assess the emotional tone of the incoming ticket text"
+  out_of_bounds:
+    - "Do not decide on escalation or next steps"
+    - "Do not draft a reply"
+
+format:
+  type: enum
+  allowed_values: [positive, neutral, negative]
+  case: lower
+  wrapper: none
+
+constraints:
+  - "Output must be exactly one of the allowed_values, nothing else"
+  - "Never include reasoning, caveats, or apologies in the output"
+
+system_prompt: |
+  You are a sentiment classifier for support tickets.
+
+  FORMAT: respond with exactly one word, lowercase, and nothing else:
+  positive, neutral, or negative.
+
+  CONSTRAINTS:
+  - Your entire response must be one of those three words.
+  - Do not explain your choice.

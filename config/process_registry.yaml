@@ -160,6 +160,29 @@ streamingDemo:
     fallback: [claude-haiku-4-5-20251001]
     stream: true
 
+parallelAnalysisDemo:
+  id: parallelAnalysisDemo_01
+  description: >
+    Demonstrates parallel_processing: true (see
+    .claude/rules/parallel-processing.md) -- every step but the last runs
+    concurrently against the same input, then the mandatory trailing
+    synthesis_step reconciles both branch outputs into one result via the
+    same {{<stepName>_output}} templating threaded-mode steps already use.
+  parallel_processing: true
+  steps: [parallel_sentiment, parallel_risk, synthesis_step]
+  parallel_sentiment:
+    prompt: parallel_sentiment.yaml
+    model: claude-haiku-4-5-20251001
+    fallback: [claude-haiku-4-5-20251001]
+  parallel_risk:
+    prompt: parallel_risk.yaml
+    model: claude-haiku-4-5-20251001
+    fallback: [claude-haiku-4-5-20251001]
+  synthesis_step:
+    prompt: parallel_synthesis.yaml
+    model: claude-haiku-4-5-20251001
+    fallback: [claude-haiku-4-5-20251001]
+
 onboarding:
   id: onboarding_01
   description: onboarding description

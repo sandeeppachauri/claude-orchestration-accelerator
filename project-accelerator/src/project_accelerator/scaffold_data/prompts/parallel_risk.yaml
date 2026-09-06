@@ -1,0 +1,28 @@
+step: parallel_risk
+version: 1
+scope:
+  in_bounds:
+    - "Assess churn/legal/financial risk implied by the incoming ticket text"
+  out_of_bounds:
+    - "Do not decide on escalation or next steps"
+    - "Do not draft a reply"
+
+format:
+  type: enum
+  allowed_values: [low, medium, high]
+  case: lower
+  wrapper: none
+
+constraints:
+  - "Output must be exactly one of the allowed_values, nothing else"
+  - "Never include reasoning, caveats, or apologies in the output"
+
+system_prompt: |
+  You are a risk classifier for support tickets.
+
+  FORMAT: respond with exactly one word, lowercase, and nothing else:
+  low, medium, or high.
+
+  CONSTRAINTS:
+  - Your entire response must be one of those three words.
+  - Do not explain your choice.

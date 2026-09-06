@@ -29,8 +29,10 @@ per-step configuration. Structure:
 
 Rules:
 
-- `id`, `description`, and `steps` are per-process metadata. Every other
-  top-level key inside a process block must match a name in `steps`.
+- `id`, `description`, `steps`, `context_mode`, `trimming`,
+  `session_store`, and `parallel_processing` are per-process metadata.
+  Every other top-level key inside a process block must match a name in
+  `steps`.
 - `steps` may list any number of step names, in any order — nothing reads
   a fixed count or fixed names.
 - A step's `prompt` can point at any file under `prompts/`, not
@@ -57,6 +59,10 @@ Rules:
 - If a `(process, step)` pair isn't defined at all, the accelerator falls
   back to a built-in default: one model (from `.env`'s `DEFAULT_MODEL`)
   and one generic system prompt, with no fallback chain.
+- A process may also set `parallel_processing: true` (default: `false`)
+  to run every step but the last concurrently, with the mandatory last
+  step (named `synthesis_step` or `reconcile_step`) reconciling every
+  branch's output -- see `.claude/rules/parallel-processing.md`.
 
 ## Runtime input & `{{key}}` placeholders
 

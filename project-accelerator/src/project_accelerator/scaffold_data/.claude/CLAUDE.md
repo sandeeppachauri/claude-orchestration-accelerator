@@ -42,7 +42,9 @@ result = execute({
 
 `result` is `{step_name: {output, model_used, stop_reason, usage,
 tool_calls, request_id, latency_ms, session_id}, ...}` — `output` is the
-validated text; the rest is metadata about that step's model call.
+validated text; the rest is metadata about that step's model call. See
+`CHANGELOG.md` if migrating from a version where `result[step]` was a
+bare string.
 
 Nothing about which process/step/model/backend runs is hardcoded anywhere
 in this path — it is entirely driven by the payload and by
@@ -54,12 +56,17 @@ in this path — it is entirely driven by the payload and by
   step order and per-step `{prompt, model, fallback}` configuration. This
   is the *only* place step flow is controlled — a payload can select a
   process and, optionally, narrow to one step, but it can never reorder,
-  skip, or subset a process's `steps` list. Every step capability key
-  (anything besides `prompt`/`model`/`fallback`/`system_prompt`) is
-  checked against `config/capability_registry.yaml`'s per-backend whitelist
-  before the model call.
+  skip, or subset a process's `steps` list. Any other key on a step block
+  (`max_turns`, `thinking`, `temperature`, `top_p`, `permission_mode`, ...)
+  is a capability passthrough — it flows untouched through `core.py` ->
+  `execute_with_fallback()` -> the chosen backend's model call, so
+  per-step model behavior is tunable from config alone. Every capability
+  key is checked against `config/capability_registry.yaml`'s per-backend
+  whitelist first — an unlisted key raises `UnsupportedCapabilityError`
+  before the model call, not a `TypeError` deep inside the SDK.
 - `config/capability_registry.yaml` is the whitelist of capability keys allowed
-  per backend (`agent_sdk` / `messages_api`) — not environment-specific
+  per backend (`agent_sdk` / `messages_api`) — see
+  `.claude/rules/capability-registry.md`. Not environment-specific
   (unlike `.env`): the same keys must be valid on every environment a
   backend runs in.
 - `.env` carries `ENVIRONMENT` (default resolved environment) and
@@ -80,6 +87,10 @@ in this path — it is entirely driven by the payload and by
 - A step may also set `stream: true` to emit chunks to `execute()`'s
   payload `on_chunk` callback as they arrive, on both backends — see
   `.claude/rules/streaming.md`.
+- A process may also set `parallel_processing: true` (default: `false`)
+  to run every step but the last concurrently, then reconcile all of
+  them via a mandatory trailing `synthesis_step`/`reconcile_step` — see
+  `.claude/rules/parallel-processing.md`.
 
 ## Running tests
 
@@ -89,3 +100,17 @@ pytest tests/test_sample_pipeline.py
 
 See each sub-project's own README (`claude-orchestration-accelerator`,
 `model-router/`, `project-accelerator/`) for install/usage detail.
+
+## Keeping the scaffold in sync
+
+`project-accelerator/src/project_accelerator/scaffold_data/` is what
+`cpa new` ships to every scaffolded project — it must always match this
+repo's own `config/` schemas, rule docs, and worked example
+(`templatingDemo`, `dummyDemoSkill`). Run
+`python project-accelerator/scripts/check_scaffold_sync.py` to check;
+`sh project-accelerator/scripts/install-git-hooks.sh` (once per clone)
+installs a pre-commit hook that runs it automatically whenever a commit
+touches `config/*.yaml`, `.claude/rules/*.md`, or scaffold_data itself.
+
+## Keeping the scaffold in sync
+- you will not be starting any change until i confirmed you when we are in plan mode

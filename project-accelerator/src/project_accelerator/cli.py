@@ -103,6 +103,9 @@ def _write_env_file(dest: Path) -> None:
         "#                                          works with either backend\n"
         "ENVIRONMENT=local\n"
         "# ANTHROPIC_API_KEY=sk-ant-api...   # required once ENVIRONMENT != local/dev\n"
+        "ANTHROPIC_BASE_URL=https://api.anthropic.com\n"
+        "# optional override -- or ANTHROPIC_BASE_URL_<ENV> (e.g. ANTHROPIC_BASE_URL_PROD)\n"
+        "#   to scope a custom endpoint to one environment\n"
         "DEFAULT_MODEL=claude-sonnet-5\n"
         "# DEFAULT_TRIMMING_STRATEGY=none   # turn_count | token_budget | none -- fallback for a\n"
         "#   context_mode: session process that omits its own `trimming` block\n"
@@ -451,19 +454,30 @@ runnable driver script under `examples/`:
    `streamingDemo` in `config/process_registry.yaml`,
    `prompts/streaming_narrate.yaml`, and `examples/run_streaming.py`).
    Full mechanics in `.claude/rules/streaming.md`.
+
+4. **`parallel_processing: true`** -- runs every step but the last
+   concurrently, then reconciles all of them via a mandatory trailing
+   `synthesis_step`/`reconcile_step` (see `parallelAnalysisDemo` in
+   `config/process_registry.yaml`, `prompts/parallel_sentiment.yaml` /
+   `prompts/parallel_risk.yaml` / `prompts/parallel_synthesis.yaml`, and
+   `examples/run_parallel_processing.py`). Full mechanics in
+   `.claude/rules/parallel-processing.md`.
 """
         if include_samples
         else """
 ## Advanced step/process features
 
-Three optional process/step features beyond static `{key}` templating --
+Four optional process/step features beyond static `{key}` templating --
 `context_mode: session` (a real, accumulating `agent_sdk` conversation
 across steps), `assistant_prompt` (a fixed few-shot assistant turn,
-`messages_api`-only), and `stream: true` (chunk emission via
-`execute()`'s payload `on_chunk` callback). This scaffold was created
-with `--sample-needed no`, so the worked examples are not included here
--- see `.claude/rules/context-mode.md`, `.claude/rules/process-registry.md`
-(`assistant_prompt` section), and `.claude/rules/streaming.md`.
+`messages_api`-only), `stream: true` (chunk emission via `execute()`'s
+payload `on_chunk` callback), and `parallel_processing: true` (every step
+but the last runs concurrently, then a mandatory trailing
+`synthesis_step`/`reconcile_step` reconciles them). This scaffold was
+created with `--sample-needed no`, so the worked examples are not
+included here -- see `.claude/rules/context-mode.md`,
+`.claude/rules/process-registry.md` (`assistant_prompt` section),
+`.claude/rules/streaming.md`, and `.claude/rules/parallel-processing.md`.
 """
     )
 
@@ -515,6 +529,11 @@ with `--sample-needed no`, so the worked examples are not included here
 - **`examples/run_streaming.py`** -- runnable `stream: true` walkthrough
   (`streamingDemo`) with a real `on_chunk` callback. See "Advanced
   step/process features" above.
+
+- **`examples/run_parallel_processing.py`** -- runnable
+  `parallel_processing: true` walkthrough (`parallelAnalysisDemo`): two
+  independent branches run concurrently, then `synthesis_step`
+  reconciles both. See "Advanced step/process features" above.
 
 """
         if include_samples
@@ -635,7 +654,9 @@ whitelist -- see `.claude/rules/process-registry.md` and
 
 See `.claude/rules/mcp-scope.md` (`mcp_servers`/`allowed_tools`/`skills`)
 and `.claude/rules/guardrails-registry.md` (`guardrails`) for full detail
-on the last four rows above.
+on the last four rows above. `parallel_processing: true` is a
+process-level key (not a step-level capability passthrough, so it has no
+row above) -- see `.claude/rules/parallel-processing.md`.
 
 A step meant to run on both backends needs two different capability
 blocks (or two different process entries) -- not one block mixing both
@@ -1249,6 +1270,63 @@ if __name__ == "__main__":
     )
 
 
+def _write_parallel_processing_example(dest: Path, include_samples: bool = True) -> None:
+    if not include_samples:
+        return
+    examples_dir = dest / "examples"
+    examples_dir.mkdir(exist_ok=True)
+    (examples_dir / "run_parallel_processing.py").write_text(
+        '''"""
+run_parallel_processing.py
+
+Runnable example of parallel_processing: true (see
+.claude/rules/parallel-processing.md) -- every step but the last in a
+process's `steps` list runs concurrently against the same input, then the
+mandatory trailing synthesis_step (or reconcile_step) reconciles every
+branch's output into one result, via the same {{<stepName>_output}}
+templating threaded-mode steps already use.
+
+Demonstrates parallelAnalysisDemo: parallel_sentiment and parallel_risk
+run concurrently (each blind to the other's result), then synthesis_step
+combines both into one JSON recommendation.
+
+Needs a credential (ANTHROPIC_API_KEY env var, or an ambient `claude
+login` OAuth session) resolved via claude-auth-accelerator.
+
+Run: python examples/run_parallel_processing.py
+"""
+
+from __future__ import annotations
+
+from auth_accelerator.exceptions import AuthResolutionError
+from project_accelerator import execute
+
+
+def main() -> None:
+    try:
+        result = execute(
+            {
+                "process": "parallelAnalysisDemo",
+                "input": "The product works great, thanks!",
+                "backend": "agent_sdk",
+                "environment": "local",
+            }
+        )
+    except AuthResolutionError as exc:
+        print(f"No credential resolved ({exc}). Set ANTHROPIC_API_KEY or run `claude login`.")
+        return
+
+    print(f"[parallel_sentiment] {result['parallel_sentiment']['output']}")
+    print(f"[parallel_risk] {result['parallel_risk']['output']}")
+    print(f"[synthesis_step] {result['synthesis_step']['output']}")
+
+
+if __name__ == "__main__":
+    main()
+'''
+    )
+
+
 def _write_sample_test(dest: Path, include_samples: bool = True) -> None:
     tests_dir = dest / "tests"
     tests_dir.mkdir(exist_ok=True)
@@ -1467,6 +1545,7 @@ def cmd_new(args: argparse.Namespace) -> None:
     _write_support_session_example(dest, include_samples)
     _write_assistant_seed_example(dest, include_samples)
     _write_streaming_example(dest, include_samples)
+    _write_parallel_processing_example(dest, include_samples)
     _write_sample_test(dest, include_samples)
 
     if args.python:

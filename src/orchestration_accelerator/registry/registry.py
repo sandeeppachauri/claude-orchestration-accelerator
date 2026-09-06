@@ -40,9 +40,19 @@ DEFAULT_CAPABILITY_REGISTRY_PATH = (
     Path(__file__).resolve().parents[3] / "config" / "capability_registry.yaml"
 )
 
-_RESERVED_KEYS = {"id", "description", "steps", "context_mode", "trimming", "session_store"}
+_RESERVED_KEYS = {
+    "id",
+    "description",
+    "steps",
+    "context_mode",
+    "trimming",
+    "session_store",
+    "parallel_processing",
+}
 
 VALID_CONTEXT_MODES = {"threaded", "session"}
+
+SYNTHESIS_STEP_NAMES = {"synthesis_step", "reconcile_step"}
 
 _GENERIC_DEFAULT_SYSTEM_PROMPT = (
     "You are a general-purpose assistant step running inside the "
@@ -89,6 +99,15 @@ class SessionStoreResolutionError(Exception):
     -- an unknown backend name, a `custom` backend with no/bad `factory`,
     or one of the documented copy-in-yourself backends (s3/redis/postgres)
     with no adapter actually installed."""
+
+
+class MissingSynthesisStepError(Exception):
+    """Raised at process-load time when a process has
+    `parallel_processing: true` but its `steps` list either has fewer
+    than 2 entries, or its last entry isn't literally named
+    'synthesis_step' or 'reconcile_step' -- every step but the last runs
+    concurrently, and the last step is mandatory as the reconciliation
+    step that reads every other step's `{{<stepName>_output}}`."""
 
 
 def load_registry(path: Path | str = DEFAULT_REGISTRY_PATH) -> dict[str, Any]:
@@ -157,6 +176,29 @@ def get_process(
             )
         step_config[step_name] = block[step_name]
 
+    parallel_processing = bool(block.get("parallel_processing", False))
+    if parallel_processing:
+        last_step = steps[-1] if steps else None
+        if len(steps) < 2 or last_step not in SYNTHESIS_STEP_NAMES:
+            found_desc = f"'{last_step}'" if last_step else "no steps at all"
+            raise MissingSynthesisStepError(
+                friendly_error(
+                    f"Process '{process}' has parallel_processing: true but "
+                    f"isn't set up for it -- it needs at least one parallel "
+                    f"step plus a final reconciliation step named "
+                    f"'synthesis_step' or 'reconcile_step'. This needs a "
+                    f"config fix, not a retry.",
+                    f"Process '{process}' has parallel_processing: true but "
+                    f"its last step in `steps` is {found_desc} -- the last "
+                    f"step must be named 'synthesis_step' or 'reconcile_step' "
+                    f"to serve as the reconciliation step, and `steps` must "
+                    f"have at least 2 entries (one parallel step + the "
+                    f"synthesis step). Rename the last entry in `steps` for "
+                    f"process '{process}' to 'synthesis_step' or "
+                    f"'reconcile_step' and add a matching step config block.",
+                )
+            )
+
     return {
         "id": block.get("id"),
         "description": block.get("description"),
@@ -165,6 +207,7 @@ def get_process(
         "context_mode": context_mode,
         "trimming": block.get("trimming"),
         "session_store": block.get("session_store"),
+        "parallel_processing": parallel_processing,
     }
 
 

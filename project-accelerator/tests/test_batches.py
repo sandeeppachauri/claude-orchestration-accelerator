@@ -56,13 +56,16 @@ def _install_fake_anthropic(monkeypatch, outputs):
     fake_messages = types.SimpleNamespace(batches=fake_batches)
 
     class FakeClient:
-        def __init__(self, api_key):
+        def __init__(self, api_key, base_url=None):
             self.messages = fake_messages
 
     fake_anthropic = types.SimpleNamespace(Anthropic=FakeClient)
     monkeypatch.setitem(sys.modules, "anthropic", fake_anthropic)
 
-    fake_auth = types.SimpleNamespace(build_api_credential=lambda environment: "sk-test")
+    fake_auth = types.SimpleNamespace(
+        build_api_credential=lambda environment: "sk-test",
+        build_base_url=lambda environment: None,
+    )
     monkeypatch.setitem(sys.modules, "auth_accelerator", fake_auth)
     return fake_batches
 

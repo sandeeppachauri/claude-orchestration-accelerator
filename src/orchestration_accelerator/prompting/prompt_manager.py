@@ -79,6 +79,33 @@ class PromptConfig:
         return "\n".join(lines)
 
 
+def _extract_json_object(text: str) -> dict[str, Any] | None:
+    """Best-effort rescue for a JSON object buried in prose/preamble the
+    model added despite being told not to (e.g. "Here's the result:
+    ```json\\n{...}\\n```\\nRationale: ..."). Scans for every '{' and
+    balanced-brace-matches forward from it, returning the first span that
+    parses as a JSON object. Returns None if no such span exists -- the
+    caller still raises OutputContractError in that case, this only
+    widens what counts as "found the JSON", it never invents one."""
+    for start in (i for i, ch in enumerate(text) if ch == "{"):
+        depth = 0
+        for end in range(start, len(text)):
+            if text[end] == "{":
+                depth += 1
+            elif text[end] == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = text[start : end + 1]
+                    try:
+                        parsed = json.loads(candidate)
+                    except json.JSONDecodeError:
+                        break
+                    if isinstance(parsed, dict):
+                        return parsed
+                    break
+    return None
+
+
 class PromptManager:
     """
     Loads prompt configs from disk on every call to get(). This is the
@@ -287,15 +314,18 @@ class PromptManager:
             try:
                 parsed = json.loads(cleaned)
             except json.JSONDecodeError as e:
-                raise OutputContractError(
-                    friendly_error(
-                        f"The model's answer for step '{step}' wasn't valid JSON, "
-                        f"so it couldn't be processed. The run needs to be "
-                        f"retried, or the prompt/model needs adjusting.",
-                        f"[{step} v{cfg.version}] output is not valid JSON: {e}. "
-                        f"Raw output: {output!r}",
-                    )
-                ) from e
+                extracted = _extract_json_object(output)
+                if extracted is None:
+                    raise OutputContractError(
+                        friendly_error(
+                            f"The model's answer for step '{step}' wasn't valid JSON, "
+                            f"so it couldn't be processed. The run needs to be "
+                            f"retried, or the prompt/model needs adjusting.",
+                            f"[{step} v{cfg.version}] output is not valid JSON: {e}. "
+                            f"Raw output: {output!r}",
+                        )
+                    ) from e
+                parsed = extracted
 
             expected_keys = set(fmt["schema"].keys())
             actual_keys = set(parsed.keys())

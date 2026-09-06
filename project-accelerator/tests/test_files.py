@@ -23,7 +23,7 @@ def test_upload_file_resolves_environment(tmp_path, monkeypatch):
             return type("R", (), {"id": "file_abc"})()
 
     class FakeClient:
-        def __init__(self, api_key):
+        def __init__(self, api_key, base_url=None):
             captured["api_key"] = api_key
             self.files = FakeFiles()
 
@@ -34,7 +34,10 @@ def test_upload_file_resolves_environment(tmp_path, monkeypatch):
         captured["environment"] = environment
         return "sk-staging"
 
-    fake_auth = types.SimpleNamespace(build_api_credential=_fake_build_api_credential)
+    fake_auth = types.SimpleNamespace(
+        build_api_credential=_fake_build_api_credential,
+        build_base_url=lambda environment: None,
+    )
     monkeypatch.setitem(sys.modules, "auth_accelerator", fake_auth)
 
     result = upload_file(f, backend="messages_api")

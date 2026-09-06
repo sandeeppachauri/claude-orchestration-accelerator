@@ -82,6 +82,14 @@ service typically sets `ENVIRONMENT` once via its own `.env` and never
 passes `"environment"` per call — see `claude-auth-accelerator`'s README
 for the full provider list.
 
+`ANTHROPIC_BASE_URL` (defaulted to `https://api.anthropic.com` in a
+scaffolded `.env`) routes both backends' raw Messages API calls to a
+custom endpoint — scope it per environment with
+`ANTHROPIC_BASE_URL_<ENV>` (e.g. `ANTHROPIC_BASE_URL_PROD`), resolved by
+`auth_accelerator.build_base_url()`/`resolve_auth()` the same way
+`ANTHROPIC_API_KEY` is. The agent_sdk backend picks it up automatically
+via `credential.env`; no separate wiring needed there.
+
 ## Runtime input: `{{key}}` placeholders
 
 `prompts/*.yaml`'s `system_prompt` and optional `user_prompt` fields can

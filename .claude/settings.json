@@ -2,9 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(python -m pytest tests -q)",
-      "Bash(pytest -q)"
+      "Bash(pytest -q)",
+      "Bash(python -c \"import auth_accelerator, os; print\\(os.path.dirname\\(auth_accelerator.__file__\\)\\)\")"
     ]
   },
+  "allowedMcpServers": [],
   "hooks": {
     "PreToolUse": [
       {
@@ -28,8 +30,5 @@
         ]
       }
     ]
-  },
-  "allowedMcpServers": [
-    "example-illustrative-server"
-  ]
+  }
 }

@@ -4,6 +4,7 @@ import pytest
 
 from orchestration_accelerator.registry import (
     InvalidContextModeError,
+    MissingSynthesisStepError,
     ProcessNotFoundError,
     SessionStoreResolutionError,
     UnsupportedCapabilityError,
@@ -150,3 +151,70 @@ def test_resolve_session_store_copy_in_yourself_backends_raise_clear_error(backe
 def test_resolve_session_store_unknown_backend_raises():
     with pytest.raises(SessionStoreResolutionError):
         resolve_session_store({"backend": "not-a-real-backend"})
+
+
+def test_get_process_default_parallel_processing_is_false():
+    process = get_process("ticketClassification")
+    assert process["parallel_processing"] is False
+
+
+def test_get_process_reads_parallel_processing_true(tmp_path):
+    registry = tmp_path / "process_registry.yaml"
+    registry.write_text(
+        "parallelDemo:\n"
+        "  id: parallelDemo_01\n"
+        "  parallel_processing: true\n"
+        "  steps: [branchA, branchB, synthesis_step]\n"
+        "  branchA: {prompt: classify.yaml, model: m, fallback: []}\n"
+        "  branchB: {prompt: classify.yaml, model: m, fallback: []}\n"
+        "  synthesis_step: {prompt: classify.yaml, model: m, fallback: []}\n"
+    )
+    process = get_process("parallelDemo", path=registry)
+    assert process["parallel_processing"] is True
+    assert process["steps"] == ["branchA", "branchB", "synthesis_step"]
+
+
+def test_parallel_processing_accepts_reconcile_step_name(tmp_path):
+    registry = tmp_path / "process_registry.yaml"
+    registry.write_text(
+        "parallelDemo:\n"
+        "  id: parallelDemo_01\n"
+        "  parallel_processing: true\n"
+        "  steps: [branchA, reconcile_step]\n"
+        "  branchA: {prompt: classify.yaml, model: m, fallback: []}\n"
+        "  reconcile_step: {prompt: classify.yaml, model: m, fallback: []}\n"
+    )
+    process = get_process("parallelDemo", path=registry)
+    assert process["parallel_processing"] is True
+
+
+def test_parallel_processing_missing_synthesis_step_raises(tmp_path):
+    registry = tmp_path / "process_registry.yaml"
+    registry.write_text(
+        "parallelDemo:\n"
+        "  id: parallelDemo_01\n"
+        "  parallel_processing: true\n"
+        "  steps: [branchA, finalStep]\n"
+        "  branchA: {prompt: classify.yaml, model: m, fallback: []}\n"
+        "  finalStep: {prompt: classify.yaml, model: m, fallback: []}\n"
+    )
+    with pytest.raises(MissingSynthesisStepError) as excinfo:
+        get_process("parallelDemo", path=registry)
+    message = str(excinfo.value)
+    assert "parallelDemo" in message
+    assert "finalStep" in message
+    assert "synthesis_step" in message
+    assert "reconcile_step" in message
+
+
+def test_parallel_processing_single_step_raises(tmp_path):
+    registry = tmp_path / "process_registry.yaml"
+    registry.write_text(
+        "parallelDemo:\n"
+        "  id: parallelDemo_01\n"
+        "  parallel_processing: true\n"
+        "  steps: [synthesis_step]\n"
+        "  synthesis_step: {prompt: classify.yaml, model: m, fallback: []}\n"
+    )
+    with pytest.raises(MissingSynthesisStepError):
+        get_process("parallelDemo", path=registry)

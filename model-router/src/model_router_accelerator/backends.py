@@ -384,10 +384,10 @@ async def call_messages_api(
     are agent_sdk-only concepts, always `None`/`[]` here."""
     import anthropic
 
-    from auth_accelerator import build_api_credential
+    from auth_accelerator import build_api_credential, build_base_url
 
     api_key = build_api_credential(environment)
-    client = anthropic.Anthropic(api_key=api_key)
+    client = anthropic.Anthropic(api_key=api_key, base_url=build_base_url(environment))
 
     cache_control = extra.pop("cache_control", None)
     system: str | list[dict[str, Any]] = system_prompt

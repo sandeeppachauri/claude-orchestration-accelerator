@@ -39,10 +39,10 @@ class FileManager:
                 "The 'anthropic' package is required for messages_api file "
                 "operations."
             ) from exc
-        from auth_accelerator import build_api_credential
+        from auth_accelerator import build_api_credential, build_base_url
 
         api_key = build_api_credential(self.environment)
-        return anthropic.Anthropic(api_key=api_key)
+        return anthropic.Anthropic(api_key=api_key, base_url=build_base_url(self.environment))
 
     def upload(self, path: str | Path, backend: str = "messages_api", **extra: Any) -> str:
         file_path = Path(path)

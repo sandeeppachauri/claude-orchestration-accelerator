@@ -37,7 +37,7 @@ def test_messages_api_upload_uses_auth_and_anthropic_client(tmp_path, monkeypatc
             return type("R", (), {"id": "file_123"})()
 
     class FakeClient:
-        def __init__(self, api_key):
+        def __init__(self, api_key, base_url=None):
             assert api_key == "sk-test"
             self.files = FakeFiles()
 
@@ -47,7 +47,10 @@ def test_messages_api_upload_uses_auth_and_anthropic_client(tmp_path, monkeypatc
     fake_anthropic = types.SimpleNamespace(Anthropic=FakeClient)
     monkeypatch.setitem(sys.modules, "anthropic", fake_anthropic)
 
-    fake_auth = types.SimpleNamespace(build_api_credential=lambda environment: "sk-test")
+    fake_auth = types.SimpleNamespace(
+        build_api_credential=lambda environment: "sk-test",
+        build_base_url=lambda environment: None,
+    )
     monkeypatch.setitem(sys.modules, "auth_accelerator", fake_auth)
 
     manager = FileManager(environment="local")

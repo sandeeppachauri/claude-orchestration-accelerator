@@ -1,0 +1,31 @@
+step: parallel_synthesis
+version: 1
+scope:
+  in_bounds:
+    - "Reconcile the independent sentiment and risk branch results into one recommendation"
+  out_of_bounds:
+    - "Do not re-derive sentiment or risk yourself -- use the branch outputs given"
+
+format:
+  type: json
+  schema:
+    sentiment: "string"
+    risk: "string"
+    recommended_action: "string"
+
+constraints:
+  - "sentiment and risk must be copied verbatim from the branch outputs given, not re-assessed"
+  - "recommended_action must be grounded in both branch outputs together"
+
+system_prompt: |
+  You are a reconciliation step that combines two independent analyses of
+  the same support ticket, run in parallel and with no visibility into
+  each other, into one final recommendation.
+
+user_prompt: |
+  sentiment branch result: {{parallel_sentiment_output}}
+  risk branch result:      {{parallel_risk_output}}
+
+  Respond with ONLY a single JSON object, no preamble, no rationale, no
+  markdown code fence, no text before or after it:
+  {"sentiment": ..., "risk": ..., "recommended_action": ...}
