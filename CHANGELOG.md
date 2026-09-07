@@ -39,3 +39,13 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
   latency for every model call.
 - Fallback-chain transitions (falling back from one model to the next)
   are now logged at `Scope.WARNING`, not just the final serving model.
+- New `cpa new --docker-project yes|no` (default `no`) flag: generates
+  `Dockerfile`, `docker-compose.yml`, `.dockerignore`, and a FastAPI
+  wrapper (`examples/api_server.py` -- `GET /health` + `POST /classify`)
+  so a scaffolded project can be built into an image and deployed/tested
+  in a container. Works independently of `--sample-needed`. The
+  generated `docs/HOWTO.md` gains a matching "Docker deployment" section
+  with request examples. This repo's own root now ships the same
+  `Dockerfile`/`docker-compose.yml`/`.dockerignore`/`examples/api_server.py`
+  as a live reference, wired to the existing `ticketClassification`
+  process.

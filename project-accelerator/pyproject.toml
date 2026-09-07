@@ -8,6 +8,8 @@ dependencies = [
     "claude-model-router-accelerator[agent_sdk,messages_api] @ git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=model-router",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
 ]
 
 [project.optional-dependencies]

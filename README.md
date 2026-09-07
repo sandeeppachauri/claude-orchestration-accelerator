@@ -199,7 +199,10 @@ for the full field-by-field schema of each.
   `messages_api` backend.
 - [`project-accelerator/`](./project-accelerator/README.md) — `claude-project-accelerator`:
   the master accelerator — the `execute(payload)` entry point and the
-  `cpa` scaffold CLI.
+  `cpa` scaffold CLI, including `cpa new --docker-project yes` (Docker/
+  Kubernetes deployment artifacts + a FastAPI example, see that README's
+  "Docker deployment" section and this repo's own root `Dockerfile`/
+  `docker-compose.yml`/`examples/api_server.py` for a live reference).
 
 ## Existing, unaffected accelerators (separate repo, `D:\Claude\Accelerators`)
 

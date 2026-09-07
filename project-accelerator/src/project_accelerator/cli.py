@@ -337,7 +337,9 @@ See `docs/HOWTO.md` for a file-by-file breakdown and getting-started steps.
     )
 
 
-def _write_howto(dest: Path, project_name: str, include_samples: bool = True) -> None:
+def _write_howto(
+    dest: Path, project_name: str, include_samples: bool = True, include_docker: bool = False
+) -> None:
     docs_dest = dest / "docs"
     docs_dest.mkdir(exist_ok=True)
 
@@ -570,6 +572,55 @@ included here -- see `.claude/rules/context-mode.md`,
     )
 
     env_example_process = "ticketClassification" if include_samples else "yourProcess"
+
+    docker_section = (
+        """
+## Docker deployment
+
+Scaffolded with `--docker-project yes`, so this project also ships:
+
+- **`examples/api_server.py`** -- a FastAPI wrapper around `execute()`:
+  `GET /health` (no model call, used by the container's HEALTHCHECK) and
+  `POST /classify` (calls `execute()` against the `ticketClassification`
+  process; returns a clear 500 instead of crashing if that process isn't
+  defined in `config/process_registry.yaml`).
+- **`Dockerfile`** -- installs dependencies, copies the project, and runs
+  `python examples/api_server.py` (uvicorn on port 8000) as the container
+  command.
+- **`docker-compose.yml`** -- one `app` service, builds from `.`, maps
+  port 8000, loads `.env` via `env_file`.
+- **`.dockerignore`** -- keeps `.venv/`, `__pycache__/`, `.git/`, `logs/`
+  out of the build context.
+- **`setupDocker.md`** -- step-by-step: compile/sanity-check, build the
+  image, run it locally via compose, push to a registry, and deploy to
+  Kubernetes (sample `Deployment`/`Service`/`Secret` manifest included).
+
+Build and run:
+
+```bash
+docker compose up --build
+```
+
+Request examples:
+
+```bash
+curl http://localhost:8000/health
+# -> {"status": "ok"}
+
+curl -X POST http://localhost:8000/classify \\
+  -H "Content-Type: application/json" \\
+  -d '{"input": "my printer is broken"}'
+# -> {"output": "...", "model_used": "...", "stop_reason": "...", ...}
+```
+
+Set `ANTHROPIC_API_KEY` (and `ENVIRONMENT`, if not `local`) in `.env`
+before running `/classify` for real -- `docker-compose.yml`'s `env_file`
+passes it into the container. `/health` needs no credential.
+"""
+        if include_docker
+        else ""
+    )
+
     (docs_dest / "HOWTO.md").write_text(
         f"""# How to use {project_name}
 
@@ -750,7 +801,7 @@ call, relying on the payload -> `.env` -> `"local"` fallback.
 - **`scripts/smoke_test.sh`** -- runs the unit test, then a real
   pipeline call if `ANTHROPIC_API_KEY` is set. Same steps as "Getting
   started" above, scripted.
-"""
+{docker_section}"""
     )
 
 
@@ -1327,6 +1378,298 @@ if __name__ == "__main__":
     )
 
 
+def _write_api_server_example(dest: Path, include_docker: bool = False) -> None:
+    if not include_docker:
+        return
+    examples_dir = dest / "examples"
+    examples_dir.mkdir(exist_ok=True)
+    (examples_dir / "api_server.py").write_text(
+        '''"""
+api_server.py
+
+FastAPI wrapper around execute() -- scaffolded with `--docker-project yes`
+so this project can be built into a Docker image and exercised over HTTP.
+
+GET  /health    -- liveness check, no model call (used by the container's
+                   HEALTHCHECK).
+POST /classify  -- runs config/process_registry.yaml's `ticketClassification`
+                   process. Returns 500 (not a crash) if that process isn't
+                   defined -- e.g. a project scaffolded with
+                   `--sample-needed no`.
+
+Needs a credential (ANTHROPIC_API_KEY env var, or an ambient `claude
+login` OAuth session) resolved via claude-auth-accelerator for /classify;
+/health needs none.
+
+Run directly: python examples/api_server.py
+Or via Docker: docker compose up --build
+
+Sample request:
+    curl -X POST http://localhost:8000/classify \\\\
+      -H "Content-Type: application/json" \\\\
+      -d '{"input": "my printer is broken"}'
+"""
+
+from __future__ import annotations
+
+from auth_accelerator.exceptions import AuthResolutionError
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+
+from project_accelerator import execute
+
+app = FastAPI(title="claude-orchestration-accelerator example API")
+
+
+class ClassifyRequest(BaseModel):
+    input: str
+    environment: str | None = None
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {"input": "my printer is broken"},
+                {"input": "I was double charged for my subscription", "environment": "local"},
+            ]
+        }
+    }
+
+
+@app.get("/health")
+def health() -> dict:
+    return {"status": "ok"}
+
+
+@app.post("/classify")
+def classify(request: ClassifyRequest) -> dict:
+    payload = {
+        "process": "ticketClassification",
+        "step": "classify",
+        "input": request.input,
+        "backend": "agent_sdk",
+    }
+    if request.environment:
+        payload["environment"] = request.environment
+
+    try:
+        result = execute(payload)
+    except AuthResolutionError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"No credential resolved ({exc}). Set ANTHROPIC_API_KEY or run `claude login`.",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"execute() failed -- is 'ticketClassification' defined in "
+            f"config/process_registry.yaml? ({exc})",
+        )
+
+    return result["classify"]
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+'''
+    )
+
+
+def _write_docker_files(dest: Path, include_docker: bool = False) -> None:
+    if not include_docker:
+        return
+
+    (dest / "Dockerfile").write_text(
+        f'''FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir --quiet \\
+    "git+{ACCELERATORS_GIT_URL}#subdirectory=claude-auth-accelerator" \\
+    "git+{ACCELERATORS_GIT_URL}#subdirectory=ClaudeSDKLoggerAccelerator" \\
+    "git+{ORCHESTRATION_GIT_URL}#subdirectory=model-router" \\
+    "git+{ORCHESTRATION_GIT_URL}#subdirectory=project-accelerator" \\
+    "claude-agent-sdk" "anthropic" "fastapi" "uvicorn"
+
+COPY . .
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \\
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+
+CMD ["python", "examples/api_server.py"]
+'''
+    )
+
+    (dest / "docker-compose.yml").write_text(
+        """services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+"""
+    )
+
+    (dest / ".dockerignore").write_text(
+        """.venv/
+__pycache__/
+*.pyc
+.git/
+logs/
+.env
+"""
+    )
+
+    (dest / "setupDocker.md").write_text(
+        '''# setupDocker.md
+
+Steps to compile, build, and deploy this project as a container --
+locally with Docker, and on a Kubernetes cluster. Generated because this
+project was scaffolded with `--docker-project yes`.
+
+## 1. Compile / install (local sanity check, optional)
+
+Not strictly required before building the image -- the Dockerfile installs
+everything itself -- but useful to catch dependency issues before you
+build:
+
+```bash
+python -m venv .venv
+. .venv/bin/activate   # Windows: .venv\\Scripts\\activate
+pip install -r requirements.txt 2>/dev/null || true  # if you added one
+pytest tests/test_sample_pipeline.py
+```
+
+## 2. Build the image
+
+```bash
+docker build -t my-app:latest .
+# or, via compose:
+docker compose build
+```
+
+## 3. Run locally
+
+```bash
+# make sure ANTHROPIC_API_KEY (and ENVIRONMENT, if not "local") are set in .env --
+# docker-compose.yml's env_file passes it into the container.
+docker compose up
+```
+
+Verify:
+
+```bash
+curl http://localhost:8000/health
+# -> {"status": "ok"}
+
+curl -X POST http://localhost:8000/classify \\
+  -H "Content-Type: application/json" \\
+  -d '{"input": "my printer is broken"}'
+# -> {"output": "...", "model_used": "...", "stop_reason": "...", ...}
+```
+
+Stop with `docker compose down`.
+
+## 4. Push the image to a registry
+
+```bash
+docker tag my-app:latest <registry>/<namespace>/my-app:latest
+docker push <registry>/<namespace>/my-app:latest
+```
+
+Replace `<registry>/<namespace>` with your target (Docker Hub, GHCR, ECR,
+ACR, GCR, ...) and authenticate first (`docker login <registry>`).
+
+## 5. Deploy to Kubernetes
+
+Minimal `Deployment` + `Service` + `Secret` (for `ANTHROPIC_API_KEY`) --
+adjust names/namespace/replicas for your cluster:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-app-secrets
+type: Opaque
+stringData:
+  ANTHROPIC_API_KEY: "sk-ant-..."
+  ENVIRONMENT: "prod"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+        - name: my-app
+          image: <registry>/<namespace>/my-app:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: my-app-secrets
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app
+spec:
+  selector:
+    app: my-app
+  ports:
+    - port: 80
+      targetPort: 8000
+  type: ClusterIP
+```
+
+Apply and verify:
+
+```bash
+kubectl apply -f k8s.yaml
+kubectl rollout status deployment/my-app
+kubectl port-forward svc/my-app 8000:80
+curl http://localhost:8000/health
+```
+
+## Notes
+
+- `/health` needs no credential -- used by both the container `HEALTHCHECK`
+  and Kubernetes liveness/readiness probes.
+- `/classify` needs `ANTHROPIC_API_KEY` (or, for `environment: local`/`dev`,
+  an ambient `claude login` OAuth session -- not viable inside a
+  container, so use `ANTHROPIC_API_KEY` for any deployed environment).
+- Rebuild and push a new image tag after any `config/process_registry.yaml`
+  or `prompts/*.yaml` change -- these are copied into the image at build
+  time (`COPY . .` in the `Dockerfile`), not mounted at runtime.
+'''
+    )
+
+
 def _write_sample_test(dest: Path, include_samples: bool = True) -> None:
     tests_dir = dest / "tests"
     tests_dir.mkdir(exist_ok=True)
@@ -1531,13 +1874,14 @@ def cmd_new(args: argparse.Namespace) -> None:
     dest.mkdir(parents=True, exist_ok=True)
 
     include_samples = getattr(args, "sample_needed", "yes") == "yes"
+    include_docker = getattr(args, "docker_project", "no") == "yes"
 
     _copy_reference_skeleton(dest, include_samples)
     _copy_sample_config(dest, include_samples)
     _write_env_file(dest)
     _write_logger_config(dest)
     _write_readme(dest, args.project_name, include_samples)
-    _write_howto(dest, args.project_name, include_samples)
+    _write_howto(dest, args.project_name, include_samples, include_docker)
     _write_pipeline_runner(dest)
     _write_sample_usage(dest, include_samples)
     _write_file_upload_example(dest, include_samples)
@@ -1547,6 +1891,8 @@ def cmd_new(args: argparse.Namespace) -> None:
     _write_streaming_example(dest, include_samples)
     _write_parallel_processing_example(dest, include_samples)
     _write_sample_test(dest, include_samples)
+    _write_api_server_example(dest, include_docker)
+    _write_docker_files(dest, include_docker)
 
     if args.python:
         python_exe = str(Path(args.python).expanduser().resolve())
@@ -1603,6 +1949,8 @@ def cmd_new(args: argparse.Namespace) -> None:
     print("  README.md, docs/HOWTO.md")
     print("  CLAUDE.local.md, .claude/ (reference skeleton, incl. .claude/CLAUDE.md)")
     print("  .mcp.json, docs/architecture.md, scripts/smoke_test.sh")
+    if include_docker:
+        print("  Dockerfile, docker-compose.yml, .dockerignore, examples/api_server.py, setupDocker.md")
 
 
 def main() -> None:
@@ -1646,6 +1994,14 @@ def main() -> None:
         default="yes",
         help="Include the templatingDemo example process and dummyDemoSkill in the scaffold "
         "(default: yes)",
+    )
+    new_parser.add_argument(
+        "--docker-project",
+        choices=["yes", "no"],
+        default="no",
+        help="Generate Dockerfile, docker-compose.yml, .dockerignore, and a FastAPI "
+        "example (examples/api_server.py) so the scaffolded project can be built "
+        "into an image and run in a container (default: no)",
     )
     new_parser.set_defaults(venv=True, func=cmd_new)
 

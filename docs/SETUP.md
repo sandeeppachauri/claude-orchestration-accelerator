@@ -140,6 +140,7 @@ python examples/run_assistant_seed.py                               # assistant_
 python examples/run_streaming.py                                    # stream: true + on_chunk callback (streamingDemo), real model calls
 python model-router/examples/run_router_example.py                 # model-router alone, real model call
 python project-accelerator/examples/run_execute_example.py         # project_accelerator entry point, real model calls
+python examples/api_server.py                                       # FastAPI wrapper (GET /health, POST /classify) -- see step 8b
 ```
 
 ## 8. Scaffold a new project with the CLI (both paths)
@@ -154,6 +155,8 @@ cpa new --project-name my-app --path /some/other/dir --venv   # scaffold elsewhe
 cpa new --project-name my-app --python /path/to/existing/venv/bin/python  # reuse an existing env
 # or
 cpa new --project-name my-app --sample-needed no   # skip the templatingDemo example
+# or
+cpa new --project-name my-app --docker-project yes   # also generate Dockerfile/compose/FastAPI example -- see step 8b
 ```
 
 `--path` defaults to the current directory. `--python` installs into an
@@ -161,7 +164,10 @@ existing interpreter/venv instead of creating one and cannot be combined
 with `--venv`. `--sample-needed yes|no` (default `yes`) controls whether
 the `templatingDemo` example process and its `dummyDemoSkill` are
 included; `no` scaffolds a clean project with just `ticketClassification`/
-`onboarding`.
+`onboarding`. `--docker-project yes|no` (default `no`) generates
+`Dockerfile`, `docker-compose.yml`, `.dockerignore`, a FastAPI wrapper
+(`examples/api_server.py`), and `setupDocker.md` -- independent of
+`--sample-needed`, see step 8b below.
 
 By default `cpa new` looks for the sibling `Accelerators` repo (containing
 `claude-auth-accelerator` and `ClaudeSDKLoggerAccelerator`) at
@@ -209,6 +215,40 @@ This generates, under `./my-app/` (or `<path>/my-app/` with `--path`):
   one-time snapshot
 - `tests/test_sample_pipeline.py`
 - all four accelerator packages installed into the chosen environment
+- with `--docker-project yes`: `Dockerfile`, `docker-compose.yml`,
+  `.dockerignore`, `examples/api_server.py`, and `setupDocker.md` (see
+  step 8b)
+
+## 8b. Docker deployment (`--docker-project yes`)
+
+```bash
+cpa new --project-name my-app --docker-project yes
+cd my-app
+docker compose up --build
+```
+
+Verify:
+
+```bash
+curl http://localhost:8000/health
+# -> {"status": "ok"}
+
+curl -X POST http://localhost:8000/classify \
+  -H "Content-Type: application/json" \
+  -d '{"input": "my printer is broken"}'
+# -> {"output": "...", "model_used": "...", "stop_reason": "...", ...}
+```
+
+Set `ANTHROPIC_API_KEY` in the scaffolded project's `.env` first --
+`docker-compose.yml`'s `env_file` passes it into the container; `/health`
+needs no credential. Full build/push/Kubernetes-deploy steps are in the
+generated `setupDocker.md`; a live reference of the same setup (wired to
+this repo's own `ticketClassification` process) lives at this repo's
+root `Dockerfile`/`docker-compose.yml`/`examples/api_server.py`:
+
+```bash
+docker compose up --build   # from this repo's root
+```
 
 ## 9. Test a scaffolded project
 

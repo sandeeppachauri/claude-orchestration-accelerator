@@ -95,6 +95,32 @@ if one is present next to it, otherwise straight from GitHub.
   `templatingDemo` example process (and its `dummyDemoSkill`) in the
   scaffold. `no` gives a clean project with just `ticketClassification`/
   `onboarding` and no `{{key}}`-placeholder example.
+- `--docker-project yes|no` (default `no`) -- generate `Dockerfile`,
+  `docker-compose.yml`, `.dockerignore`, a FastAPI wrapper
+  (`examples/api_server.py`, `GET /health` + `POST /classify`), and
+  `setupDocker.md` (build/run/push/Kubernetes-deploy steps) so the
+  scaffolded project can be built into an image and deployed/tested in a
+  container. Independent of `--sample-needed` -- works even with
+  `--sample-needed no`, since `/classify` returns a clear error (not a
+  crash) if `ticketClassification` isn't defined yet.
+
+### Docker deployment (`--docker-project yes`)
+
+```bash
+cpa new --project-name my-app --docker-project yes
+cd my-app
+docker compose up --build
+
+curl http://localhost:8000/health
+curl -X POST http://localhost:8000/classify \
+  -H "Content-Type: application/json" \
+  -d '{"input": "my printer is broken"}'
+```
+
+Set `ANTHROPIC_API_KEY` in the scaffolded project's `.env` before calling
+`/classify` -- `docker-compose.yml`'s `env_file` passes it into the
+container. See the generated `docs/HOWTO.md`'s "Docker deployment"
+section for full detail.
 
 See the root [`requirements.txt`](../requirements.txt) for the pip
 prereqs needed to bootstrap a brand-new environment before running `cpa
