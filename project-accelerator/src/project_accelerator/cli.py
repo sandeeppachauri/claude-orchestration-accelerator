@@ -1485,12 +1485,25 @@ def _write_docker_files(dest: Path, include_docker: bool = False) -> None:
 
 WORKDIR /app
 
+RUN apt-get update && apt-get install --no-install-recommends -y git \\
+    && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --no-cache-dir --quiet \\
     "git+{ACCELERATORS_GIT_URL}#subdirectory=claude-auth-accelerator" \\
     "git+{ACCELERATORS_GIT_URL}#subdirectory=ClaudeSDKLoggerAccelerator" \\
-    "git+{ORCHESTRATION_GIT_URL}#subdirectory=model-router" \\
-    "git+{ORCHESTRATION_GIT_URL}#subdirectory=project-accelerator" \\
     "claude-agent-sdk" "anthropic" "fastapi" "uvicorn"
+
+# claude-orchestration-accelerator isn't published to PyPI -- install it
+# from git in its own step first, so model-router/project-accelerator's
+# plain "claude-orchestration-accelerator>=0.1.0" dependency line is
+# already satisfied by the time pip resolves it, instead of pip trying
+# (and failing) to find a PyPI distribution for it.
+RUN pip install --no-cache-dir --quiet \\
+    "git+{ORCHESTRATION_GIT_URL}"
+RUN pip install --no-cache-dir --quiet \\
+    "git+{ORCHESTRATION_GIT_URL}#subdirectory=model-router"
+RUN pip install --no-cache-dir --quiet \\
+    "git+{ORCHESTRATION_GIT_URL}#subdirectory=project-accelerator"
 
 COPY . .
 

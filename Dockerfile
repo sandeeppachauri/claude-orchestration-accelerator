@@ -4,13 +4,25 @@ WORKDIR /app
 
 COPY . .
 
+RUN apt-get update && apt-get install --no-install-recommends -y git \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --no-cache-dir --quiet \
     "git+https://github.com/sandeeppachauri/Accelerators.git#subdirectory=claude-auth-accelerator" \
     "git+https://github.com/sandeeppachauri/Accelerators.git#subdirectory=ClaudeSDKLoggerAccelerator" \
-    -e . \
-    -e ./model-router \
-    -e ./project-accelerator \
     "claude-agent-sdk" "anthropic" "fastapi" "uvicorn"
+
+# claude-orchestration-accelerator isn't published to PyPI -- install it
+# from git in its own step first, so model-router/project-accelerator's
+# plain "claude-orchestration-accelerator>=0.1.0" dependency line is
+# already satisfied by the time pip resolves it, instead of pip trying
+# (and failing) to find a PyPI distribution for it.
+RUN pip install --no-cache-dir --quiet \
+    "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git"
+RUN pip install --no-cache-dir --quiet \
+    "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=model-router"
+RUN pip install --no-cache-dir --quiet \
+    "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=project-accelerator"
 
 EXPOSE 8000
 
