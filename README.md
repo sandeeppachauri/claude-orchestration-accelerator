@@ -395,8 +395,3 @@ for the full field-by-field schema of each.
 
 - `claude-auth-accelerator` — credential resolution.
 - `ClaudeSDKLoggerAccelerator` — JSON-line tracing.
-
-## Status
-
-Phase 1 (this plan's Sections 4-6) is implemented. Phase 2 (a guided setup
-skill) is a stub — see `.claude/skills/setup-accelerator/SKILL.md`.
