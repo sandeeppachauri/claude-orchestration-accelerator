@@ -24,6 +24,14 @@ RUN pip install --no-cache-dir --quiet \
 RUN pip install --no-cache-dir --quiet \
     "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=project-accelerator"
 
+# Non-root user whose home matches claude-auth-accelerator's OS-session
+# mount convention (/home/agent/.claude, /home/agent/.claude.json) -- lets
+# a host's `claude login` session be bind-mounted in for containerized
+# OAuth auth, instead of requiring ANTHROPIC_API_KEY. See docker-compose.yml.
+RUN useradd --create-home --home-dir /home/agent --shell /bin/bash agent \
+    && chown -R agent:agent /app
+USER agent
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

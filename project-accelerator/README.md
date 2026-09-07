@@ -117,10 +117,17 @@ curl -X POST http://localhost:8000/classify \
   -d '{"input": "my printer is broken"}'
 ```
 
-Set `ANTHROPIC_API_KEY` in the scaffolded project's `.env` before calling
-`/classify` -- `docker-compose.yml`'s `env_file` passes it into the
-container. See the generated `docs/HOWTO.md`'s "Docker deployment"
-section for full detail.
+`/classify` resolves a credential the same way `execute()` always does
+(`claude-auth-accelerator`'s provider order): `ANTHROPIC_API_KEY` ->
+ambient `claude login` OAuth session -> an OS-mounted session.
+`docker-compose.yml` bind-mounts the host's `${HOME}/.claude`/
+`${HOME}/.claude.json` into the container by default (the container runs
+as a non-root `agent` user matching that mount path) -- if the host has
+already run `claude login`, the container inherits that OAuth session
+with no raw key needed. Otherwise set `ANTHROPIC_API_KEY` in the
+scaffolded project's `.env` -- `docker-compose.yml`'s `env_file` passes
+it into the container. See the generated `docs/HOWTO.md`'s "Docker
+deployment" section for full detail.
 
 See the root [`requirements.txt`](../requirements.txt) for the pip
 prereqs needed to bootstrap a brand-new environment before running `cpa

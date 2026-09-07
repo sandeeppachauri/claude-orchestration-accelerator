@@ -588,7 +588,9 @@ Scaffolded with `--docker-project yes`, so this project also ships:
   `python examples/api_server.py` (uvicorn on port 8000) as the container
   command.
 - **`docker-compose.yml`** -- one `app` service, builds from `.`, maps
-  port 8000, loads `.env` via `env_file`.
+  port 8000, loads `.env` via `env_file`, and bind-mounts the host's
+  `${HOME}/.claude`/`${HOME}/.claude.json` into the container (see
+  "Authentication" below).
 - **`.dockerignore`** -- keeps `.venv/`, `__pycache__/`, `.git/`, `logs/`
   out of the build context.
 - **`setupDocker.md`** -- step-by-step: compile/sanity-check, build the
@@ -613,9 +615,22 @@ curl -X POST http://localhost:8000/classify \\
 # -> {"output": "...", "model_used": "...", "stop_reason": "...", ...}
 ```
 
-Set `ANTHROPIC_API_KEY` (and `ENVIRONMENT`, if not `local`) in `.env`
-before running `/classify` for real -- `docker-compose.yml`'s `env_file`
-passes it into the container. `/health` needs no credential.
+### Authentication inside the container
+
+`/classify` resolves a credential the same way `execute()` always does
+(`claude-auth-accelerator`'s provider order): `ANTHROPIC_API_KEY` ->
+ambient `claude login` OAuth session -> an OS-mounted session. The
+container runs as a non-root `agent` user (`/home/agent`), and
+`docker-compose.yml` bind-mounts the host's `${HOME}/.claude`/
+`${HOME}/.claude.json` there by default -- if the host machine has
+already run `claude login`, the container inherits that OAuth session
+with no raw key needed. If the host has never logged in, that mount is
+simply absent (empty bind mount) and resolution falls through to
+`ANTHROPIC_API_KEY` -- set that (and `ENVIRONMENT`, if not `local`) in
+`.env` instead; `docker-compose.yml`'s `env_file` passes it into the
+container. Remove the two `volumes:` lines in `docker-compose.yml` if
+you don't want the mount attempted at all. `/health` needs no
+credential either way.
 """
         if include_docker
         else ""
@@ -1507,6 +1522,14 @@ RUN pip install --no-cache-dir --quiet \\
 
 COPY . .
 
+# Non-root user whose home matches claude-auth-accelerator's OS-session
+# mount convention (/home/agent/.claude, /home/agent/.claude.json) -- lets
+# a host's `claude login` session be bind-mounted in for containerized
+# OAuth auth, instead of requiring ANTHROPIC_API_KEY. See docker-compose.yml.
+RUN useradd --create-home --home-dir /home/agent --shell /bin/bash agent \\
+    && chown -R agent:agent /app
+USER agent
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \\
@@ -1524,6 +1547,15 @@ CMD ["python", "examples/api_server.py"]
       - "8000:8000"
     env_file:
       - .env
+    volumes:
+      # OS-session auth (claude-auth-accelerator's OsSessionAuth provider):
+      # bind-mounts the host's `claude login` session into the container at
+      # the path it expects, so the container inherits OAuth without a raw
+      # ANTHROPIC_API_KEY. Falls through to ANTHROPIC_API_KEY/other auth if
+      # ${HOME}/.claude doesn't exist on the host (e.g. never ran `claude
+      # login`) -- remove these two lines if you don't want the mount.
+      - ${HOME}/.claude:/home/agent/.claude:ro
+      - ${HOME}/.claude.json:/home/agent/.claude.json:ro
 """
     )
 
@@ -1673,9 +1705,20 @@ curl http://localhost:8000/health
 
 - `/health` needs no credential -- used by both the container `HEALTHCHECK`
   and Kubernetes liveness/readiness probes.
-- `/classify` needs `ANTHROPIC_API_KEY` (or, for `environment: local`/`dev`,
-  an ambient `claude login` OAuth session -- not viable inside a
-  container, so use `ANTHROPIC_API_KEY` for any deployed environment).
+- `/classify` resolves a credential the same way `execute()` always does
+  (`claude-auth-accelerator`'s provider order): `ANTHROPIC_API_KEY` ->
+  ambient `claude login` OAuth session -> an **OS-mounted session**. The
+  container runs as a non-root `agent` user (`/home/agent`), matching
+  the mount path `claude-auth-accelerator` looks for --
+  `docker-compose.yml` bind-mounts the host's `${HOME}/.claude` and
+  `${HOME}/.claude.json` there by default, so a host that has already
+  run `claude login` gets OAuth auth inside the container with no raw
+  key. If the host has no `~/.claude` (never logged in), that mount is
+  simply absent and resolution falls through to `ANTHROPIC_API_KEY` --
+  set that in `.env` instead, or remove the two `volumes:` lines in
+  `docker-compose.yml` if you don't want the mount attempted at all. For
+  Kubernetes, there's no host session to mount -- use `ANTHROPIC_API_KEY`
+  via the `Secret` above.
 - Rebuild and push a new image tag after any `config/process_registry.yaml`
   or `prompts/*.yaml` change -- these are copied into the image at build
   time (`COPY . .` in the `Dockerfile`), not mounted at runtime.

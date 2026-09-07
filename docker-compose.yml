@@ -5,3 +5,12 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    volumes:
+      # OS-session auth (claude-auth-accelerator's OsSessionAuth provider):
+      # bind-mounts the host's `claude login` session into the container at
+      # the path it expects, so the container inherits OAuth without a raw
+      # ANTHROPIC_API_KEY. Falls through to ANTHROPIC_API_KEY/other auth if
+      # ${HOME}/.claude doesn't exist on the host (e.g. never ran `claude
+      # login`) -- remove these two lines if you don't want the mount.
+      - ${HOME}/.claude:/home/agent/.claude:ro
+      - ${HOME}/.claude.json:/home/agent/.claude.json:ro

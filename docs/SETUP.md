@@ -239,12 +239,19 @@ curl -X POST http://localhost:8000/classify \
 # -> {"output": "...", "model_used": "...", "stop_reason": "...", ...}
 ```
 
-Set `ANTHROPIC_API_KEY` in the scaffolded project's `.env` first --
-`docker-compose.yml`'s `env_file` passes it into the container; `/health`
-needs no credential. Full build/push/Kubernetes-deploy steps are in the
-generated `setupDocker.md`; a live reference of the same setup (wired to
-this repo's own `ticketClassification` process) lives at this repo's
-root `Dockerfile`/`docker-compose.yml`/`examples/api_server.py`:
+`/classify` resolves a credential via `claude-auth-accelerator`'s usual
+order: `ANTHROPIC_API_KEY` -> ambient `claude login` OAuth session -> an
+OS-mounted session. `docker-compose.yml` bind-mounts the host's
+`${HOME}/.claude`/`${HOME}/.claude.json` into the container by default
+(the container runs as a non-root `agent` user matching that mount
+path) -- if the host has already run `claude login`, the container
+inherits OAuth with no raw key needed. Otherwise set `ANTHROPIC_API_KEY`
+in the scaffolded project's `.env` -- `docker-compose.yml`'s `env_file`
+passes it into the container. `/health` needs no credential either way.
+Full build/push/Kubernetes-deploy steps are in the generated
+`setupDocker.md`; a live reference of the same setup (wired to this
+repo's own `ticketClassification` process) lives at this repo's root
+`Dockerfile`/`docker-compose.yml`/`examples/api_server.py`:
 
 ```bash
 docker compose up --build   # from this repo's root
