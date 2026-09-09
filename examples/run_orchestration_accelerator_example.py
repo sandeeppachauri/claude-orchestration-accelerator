@@ -43,7 +43,7 @@ def main() -> None:
         print(f"{type(exc).__name__}: {exc}")
 
     print("\n--- prompting: dynamic/templated input via ticket_triage.yaml {{key}}s ---")
-    _, system_prompt, user_prompt = pm.render(
+    _, system_prompt, _, user_prompt = pm.render(
         "ticket_triage",
         {
             "ticket_id": "T-1",
