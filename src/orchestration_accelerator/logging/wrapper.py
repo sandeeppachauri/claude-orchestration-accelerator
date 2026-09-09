@@ -7,7 +7,9 @@ and manually wire pre_tool_use_hook/post_tool_use_hook into
 ClaudeAgentOptions.hooks. Since every orchestration-accelerator consumer
 wants logging by default (not opt-in per project), this module:
 
-  - ships a default logger_config.json with all 10 scopes enabled
+  - ships a default logger_config.json with all 11 scopes enabled and
+    "enabled": true (the sdk_logger_accelerator-wide on/off switch --
+    set false to disable all logging with no other config change)
   - calls sdk_logger_accelerator.configure() with it automatically
   - exposes get_default_hooks() to wire pre/post hooks into whatever
     ClaudeAgentOptions the caller builds

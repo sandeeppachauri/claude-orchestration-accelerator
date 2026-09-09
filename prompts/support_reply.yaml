@@ -1,0 +1,32 @@
+step: support_reply
+version: 1
+scope:
+  in_bounds:
+    - "Draft a short reply to the customer's message"
+  out_of_bounds:
+    - "Do not classify or triage the ticket"
+    - "Do not escalate"
+
+format:
+  type: text
+  max_words: 150
+
+constraints:
+  - "Reply only to what the customer actually asked"
+  - "Keep the reply under 150 words"
+
+# Demonstrates prompt_guardrails (see .claude/rules/prompt-guardrails.md)
+# -- names resolved against config/prompt_guardrails.yaml, composed into
+# system_prompt below at load time, before {{key}} placeholder
+# substitution runs. Unrelated to process_registry.yaml's `guardrails:`
+# step key (tool-call enforcement) -- see
+# .claude/rules/guardrails-registry.md for that, a separate mechanism.
+prompt_guardrails: [insuranceSupportPolicy]
+
+system_prompt: |
+  You are a support agent for an insurance company. Draft a short,
+  friendly reply to the customer's message below.
+
+user_prompt: |
+  Customer message:
+  {{customer_message}}

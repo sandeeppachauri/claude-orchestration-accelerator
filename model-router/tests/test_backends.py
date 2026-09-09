@@ -147,13 +147,16 @@ def _install_fake_messages_api(monkeypatch, response_text="ok"):
             return _FakeResponse(response_text)
 
     class FakeClient:
-        def __init__(self, api_key):
+        def __init__(self, api_key, base_url=None):
             self.messages = FakeMessages()
 
     fake_anthropic = types.SimpleNamespace(Anthropic=FakeClient)
     monkeypatch.setitem(sys.modules, "anthropic", fake_anthropic)
 
-    fake_auth = types.SimpleNamespace(build_api_credential=lambda environment: "sk-test")
+    fake_auth = types.SimpleNamespace(
+        build_api_credential=lambda environment: "sk-test",
+        build_base_url=lambda environment: "https://api.anthropic.com",
+    )
     monkeypatch.setitem(sys.modules, "auth_accelerator", fake_auth)
     return captured
 
@@ -259,13 +262,16 @@ def _install_fake_streaming_messages_api(monkeypatch, chunks, response_text):
             return _FakeMessageStream(events, final_response)
 
     class FakeClient:
-        def __init__(self, api_key):
+        def __init__(self, api_key, base_url=None):
             self.messages = FakeMessages()
 
     fake_anthropic = types.SimpleNamespace(Anthropic=FakeClient)
     monkeypatch.setitem(sys.modules, "anthropic", fake_anthropic)
 
-    fake_auth = types.SimpleNamespace(build_api_credential=lambda environment: "sk-test")
+    fake_auth = types.SimpleNamespace(
+        build_api_credential=lambda environment: "sk-test",
+        build_base_url=lambda environment: "https://api.anthropic.com",
+    )
     monkeypatch.setitem(sys.modules, "auth_accelerator", fake_auth)
     return captured
 

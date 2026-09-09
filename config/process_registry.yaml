@@ -26,9 +26,13 @@ templatingDemo:
     below is example 2 (multiple placeholders, static prompt around
     them). `escalate` is example 3 (complex: placeholders in both
     system_prompt and user_prompt, plus every capability-passthrough key
-    in one place).
+    in one place). `supportReply` demonstrates prompt_guardrails (see
+    .claude/rules/prompt-guardrails.md) -- a reusable, named
+    prompt-content policy block, distinct from `escalate`'s
+    commented-out `guardrails:` key (tool-call enforcement, see
+    .claude/rules/guardrails-registry.md).
   # context_mode: threaded  -- default when omitted (see .claude/rules/context-mode.md)
-  steps: [triage, escalate]
+  steps: [triage, escalate, supportReply]
   triage:
     prompt: ticket_triage.yaml
     model: claude-haiku-4-5-20251001
@@ -101,6 +105,20 @@ templatingDemo:
     # skills section of .claude/rules/mcp-scope.md). Commented out --
     # inactive until opted in:
     # skills: [dummyDemoSkill]
+  supportReply:
+    prompt: support_reply.yaml
+    model: claude-haiku-4-5-20251001
+    fallback: [claude-haiku-4-5-20251001]
+    # input must be a dict: {customer_message}
+    #
+    # Demonstrates prompt_guardrails (see .claude/rules/prompt-guardrails.md)
+    # -- a reusable, named prompt-content policy block (dos/don'ts)
+    # composed into system_prompt, unrelated to this process's `escalate`
+    # step's commented-out `guardrails: [redactPII]` (tool-call
+    # enforcement). Set in prompts/support_reply.yaml itself, not here --
+    # prompt_guardrails lives at the prompt-YAML tier, alongside
+    # system_prompt/user_prompt, so prompt authoring stays self-contained
+    # per prompt file.
 
 supportSession:
   id: supportSession_01

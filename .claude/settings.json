@@ -3,7 +3,15 @@
     "allow": [
       "Bash(python -m pytest tests -q)",
       "Bash(pytest -q)",
-      "Bash(python -c \"import auth_accelerator, os; print\\(os.path.dirname\\(auth_accelerator.__file__\\)\\)\")"
+      "Bash(python -c \"import auth_accelerator, os; print\\(os.path.dirname\\(auth_accelerator.__file__\\)\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('project-accelerator/src/project_accelerator/cli.py', encoding='utf-8'\\).read\\(\\)\\)\")",
+      "Bash(rm -rf /tmp/cpa_dockerfix_test)",
+      "Bash(python -m project_accelerator.cli new --project-name cpa_dockerfix_test --path /tmp --docker-project yes --allow-missing-accelerators --no-venv)",
+      "Read(//tmp/cpa_dockerfix_test/**)",
+      "Bash(rm -rf /tmp/cpa_dockerfix_test /tmp/gen3.log)",
+      "Bash(docker build *)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(python -c ' *)"
     ]
   },
   "allowedMcpServers": [],

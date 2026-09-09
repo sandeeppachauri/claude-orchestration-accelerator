@@ -88,6 +88,7 @@ def _copy_sample_config(dest: Path, include_samples: bool = True) -> None:
         )
     shutil.copy2(data_dir / "config" / "capability_registry.yaml", config_dest / "capability_registry.yaml")
     shutil.copy2(data_dir / "config" / "guardrails.yaml", config_dest / "guardrails.yaml")
+    shutil.copy2(data_dir / "config" / "prompt_guardrails.yaml", config_dest / "prompt_guardrails.yaml")
     prompts_dest = dest / "prompts"
     prompts_dest.mkdir(exist_ok=True)
     if include_samples:
@@ -768,10 +769,13 @@ once via that environment's `.env` and omits `"environment"` from every
 call, relying on the payload -> `.env` -> `"local"` fallback.
 
 - **`logger_config.json`** -- turns the default JSON-line tracing wrapper's
-  10 logging scopes on/off. Logging is on by default -- `execute()` loads
+  11 logging scopes on/off. Logging is on by default -- `execute()` loads
   this file automatically before its first log call, so editing
-  `enabled_scopes` here takes effect with no code change. Trace lines
-  land under `./logs/trace.log` (path/rotation also configurable here).
+  `enabled_scopes` here takes effect with no code change. An
+  `"enabled": true` key is the wrapper's global on/off switch -- set
+  `false` to disable all logging outright, independent of
+  `enabled_scopes`. Trace lines land under `./logs/trace.log`
+  (path/rotation also configurable here).
 
 - **`pipeline/run_pipeline.py`** -- a runnable script that reads a process
   name and input off `sys.argv` and calls `execute()` with no `"step"` key,
@@ -1996,11 +2000,11 @@ def cmd_new(args: argparse.Namespace) -> None:
     print(f"\nScaffolded project '{args.project_name}' at {dest}")
     print("Created:")
     if include_samples:
-        print("  prompts/*.yaml, config/process_registry.yaml, config/capability_registry.yaml, config/batch_registry.yaml, config/guardrails.yaml, .env, logger_config.json")
+        print("  prompts/*.yaml, config/process_registry.yaml, config/capability_registry.yaml, config/batch_registry.yaml, config/guardrails.yaml, config/prompt_guardrails.yaml, .env, logger_config.json")
         print("  pipeline/run_pipeline.py, examples/sample_usage.py, tests/test_sample_pipeline.py")
         print("  examples/file_upload_example.py, examples/batch_processing_example.py")
     else:
-        print("  prompts/ (empty), config/process_registry.yaml (empty), config/capability_registry.yaml, config/batch_registry.yaml (empty), config/guardrails.yaml, .env, logger_config.json")
+        print("  prompts/ (empty), config/process_registry.yaml (empty), config/capability_registry.yaml, config/batch_registry.yaml (empty), config/guardrails.yaml, config/prompt_guardrails.yaml, .env, logger_config.json")
         print("  pipeline/run_pipeline.py, tests/test_sample_pipeline.py (placeholder, no examples/ dir)")
     print("  README.md, docs/HOWTO.md")
     print("  CLAUDE.local.md, .claude/ (reference skeleton, incl. .claude/CLAUDE.md)")

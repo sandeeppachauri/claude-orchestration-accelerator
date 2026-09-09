@@ -72,14 +72,23 @@ in this path — it is entirely driven by the payload and by
 - `.env` carries `ENVIRONMENT` (default resolved environment) and
   `DEFAULT_MODEL` (used by the built-in default configuration fallback
   when a `(process, step)` isn't defined in `config/process_registry.yaml`).
-- `logger_config.json` configures the default logging wrapper (all 10
-  scopes enabled by default).
+- `logger_config.json` configures the default logging wrapper (all 11
+  scopes enabled by default, including `OTHER`). An `"enabled": true`
+  key is the wrapper's global on/off switch -- set `false` to disable
+  all logging with no other config change, independent of
+  `enabled_scopes`.
 - A step may also set `mcp_servers`/`allowed_tools` (MCP access scoping)
   and `skills` (native per-skill restriction) — see
   `.claude/rules/mcp-scope.md`. `config/guardrails.yaml` supplies named,
   config-tunable guardrail instances a step opts into via a `guardrails`
   key — see `.claude/rules/guardrails-registry.md`. All three are
-  optional per step and fail-open when omitted.
+  optional per step and fail-open when omitted. `config/guardrails.yaml`
+  is **tool-call enforcement** (PreToolUse hooks) only — for reusable
+  prompt-content dos/don'ts composed into `system_prompt` text instead,
+  a prompt YAML file (not the step) sets `prompt_guardrails`, resolved
+  against `config/prompt_guardrails.yaml` — see
+  `.claude/rules/prompt-guardrails.md`. Also optional, fail-open, and
+  independent of every other mechanism on this list.
 - A process may also set `context_mode: session` (default: `threaded`)
   for a real, accumulating agent_sdk conversation across steps instead
   of `{{<stepName>_output}}` templating, plus optional `trimming`/

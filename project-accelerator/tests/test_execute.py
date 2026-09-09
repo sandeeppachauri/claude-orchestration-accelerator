@@ -173,7 +173,11 @@ def test_execute_multi_field_dict_input_survives_across_steps(monkeypatch):
     _patch_logging(monkeypatch)
 
     seen_user_content = []
-    responses = ["escalate to billing team", '{"escalate": true, "urgency": "high", "reason": "gold tier, SLA breach imminent"}']
+    responses = [
+        "escalate to billing team",
+        '{"escalate": true, "urgency": "high", "reason": "gold tier, SLA breach imminent"}',
+        "Thanks for reaching out -- we'll look into your invoice.",
+    ]
 
     async def _fake_execute_with_fallback(*, model, fallback, system_prompt, user_content, backend, environment, **kwargs):
         seen_user_content.append(user_content)
@@ -191,6 +195,7 @@ def test_execute_multi_field_dict_input_survives_across_steps(monkeypatch):
                 "body": "My invoice is wrong",
                 "account_history": "3 prior tickets, no refunds issued",
                 "sla_minutes_remaining": 45,
+                "customer_message": "My invoice is wrong",
             },
             "backend": "agent_sdk",
         }

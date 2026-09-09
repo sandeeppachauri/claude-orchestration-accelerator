@@ -1,6 +1,7 @@
 {
   "log_dir": "./logs",
   "filename_pattern": "trace.log",
+  "enabled": true,
   "rotation": {
     "strategy": "size",
     "max_bytes": 10485760,
@@ -16,6 +17,7 @@
     "ERROR",
     "INFO",
     "WARNING",
-    "DEBUG"
+    "DEBUG",
+    "OTHER"
   ]
 }

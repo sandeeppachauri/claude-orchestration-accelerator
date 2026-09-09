@@ -96,9 +96,15 @@ in this path — it's entirely driven by the payload and by
   `capability_registry.yaml`'s per-backend whitelist first, so an
   unsupported key raises `UnsupportedCapabilityError` before the model
   call, not a `TypeError` deep inside the SDK. See "Capabilities" below.
-- **Guardrails** — named, config-tunable checks (`redaction`,
-  `rate_limit`, ...) a step opts into via a `guardrails: [...]` key, fail
-  open by default. See `.claude/rules/guardrails-registry.md`.
+- **Guardrails (tool-call enforcement)** — named, config-tunable checks
+  (`redaction`, `rate_limit`, ...) a step opts into via a
+  `guardrails: [...]` key, fail open by default. See
+  `.claude/rules/guardrails-registry.md`.
+- **Prompt guardrails (prompt-content policy)** — reusable, named
+  dos/don'ts text composed into a prompt's `system_prompt`, set on the
+  prompt file itself via `prompt_guardrails: [...]`, fail open by
+  default. A separate mechanism from tool-call guardrails above — see
+  `.claude/rules/prompt-guardrails.md`.
 - **`{{key}}` placeholders** — dynamic input filled into prompts at call
   time, including threading a prior step's output forward. See "Runtime
   input" below.
@@ -170,6 +176,11 @@ Beyond the core `execute()` call:
 
 ## Guardrails
 
+Two independent mechanisms share the word "guardrails" here — don't
+confuse them.
+
+### Tool-call enforcement (`config/guardrails.yaml`)
+
 Enforced per step, config-driven, fail-open by default (no `guardrails`
 key or missing config file = no restriction, same posture as MCP
 scoping):
@@ -179,9 +190,26 @@ scoping):
 - **`rate_limit`** — denies a tool call once `max_calls` is hit within a
   trailing time window.
 
-Attach via `guardrails: [redactPII]` on any step — no code change,
-resolved against `config/guardrails.yaml`. See
+Attach via `guardrails: [redactPII]` on any `process_registry.yaml`
+step — no code change, resolved against `config/guardrails.yaml`. See
 `.claude/rules/guardrails-registry.md`.
+
+### Prompt-content policy (`config/prompt_guardrails.yaml`)
+
+Reusable, named dos/don'ts text (e.g. "only discuss offerings we sell,"
+"never mention a competitor") composed into a prompt's rendered
+`system_prompt` — plain text handed to the model, not tool-call
+enforcement. Fail-open the same way (no `prompt_guardrails` field or
+missing config file = no composed text).
+
+Attach via `prompt_guardrails: [insuranceSupportPolicy]` on the **prompt
+YAML file** itself (`prompts/<step>.yaml`), not on the
+`process_registry.yaml` step — resolved against
+`config/prompt_guardrails.yaml`. See
+`prompts/support_reply.yaml` + `templatingDemo.supportReply` in
+`config/process_registry.yaml` + `examples/run_prompt_guardrails.py` for
+a worked example, and `.claude/rules/prompt-guardrails.md` for the full
+schema and a step-by-step "how to add one" walkthrough.
 
 ## What `cpa new` generates
 

@@ -190,3 +190,58 @@ def test_render_no_assistant_prompt_returns_none():
 def test_has_placeholders_includes_assistant_prompt():
     pm = PromptManager()
     assert pm.has_placeholders("fewshot_seed", filename="fewshot_seed.yaml") is True
+
+
+def test_prompt_guardrails_composed_into_system_prompt():
+    pm = PromptManager()
+    cfg = pm.get("support_reply", filename="support_reply.yaml")
+    assert cfg.prompt_guardrails == ["insuranceSupportPolicy"]
+    assert "GUARDRAILS (insuranceSupportPolicy):" in cfg.system_prompt
+    assert "Do not mention any competitor's products or services" in cfg.system_prompt
+
+
+def test_prompt_guardrails_omitted_is_noop():
+    pm = PromptManager()
+    cfg = pm.get("classify")
+    assert cfg.prompt_guardrails == []
+    assert "GUARDRAILS" not in cfg.system_prompt
+
+
+def test_prompt_guardrails_unknown_name_raises():
+    import tempfile
+    import yaml as _yaml
+    from pathlib import Path as _Path
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = _Path(tmp)
+        (tmp_path / "bad_prompt.yaml").write_text(
+            _yaml.safe_dump(
+                {
+                    "step": "bad_prompt",
+                    "version": 1,
+                    "scope": {"in_bounds": [], "out_of_bounds": []},
+                    "format": {"type": "text"},
+                    "constraints": [],
+                    "prompt_guardrails": ["doesNotExist"],
+                    "system_prompt": "hello",
+                }
+            )
+        )
+        bad_pm = PromptManager(prompts_dir=tmp_path)
+        try:
+            bad_pm.get("bad_prompt")
+            assert False, "expected PromptValidationError"
+        except PromptValidationError:
+            pass
+
+
+def test_render_with_prompt_guardrails_and_placeholders():
+    pm = PromptManager()
+    cfg, system_prompt, assistant_prompt, user_content = pm.render(
+        "support_reply",
+        {"customer_message": "Do you offer pet insurance?"},
+        filename="support_reply.yaml",
+    )
+    assert "GUARDRAILS (insuranceSupportPolicy):" in system_prompt
+    assert "Do you offer pet insurance?" in user_content
+    assert "{{" not in system_prompt

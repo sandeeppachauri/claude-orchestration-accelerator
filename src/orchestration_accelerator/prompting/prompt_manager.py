@@ -29,13 +29,17 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from orchestration_accelerator.errors import friendly_error
+from orchestration_accelerator.prompt_guardrails import (
+    UnknownPromptGuardrailError,
+    get_prompt_guardrail,
+)
 
 _PLACEHOLDER_RE = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
@@ -65,6 +69,7 @@ class PromptConfig:
     system_prompt: str
     user_prompt: str | None = None
     assistant_prompt: str | None = None
+    prompt_guardrails: list[str] = field(default_factory=list)
 
     def describe(self) -> str:
         """Human-readable summary -- useful for logging which contract was
@@ -150,15 +155,31 @@ class PromptManager:
                 )
             )
 
+        prompt_guardrail_names = raw.get("prompt_guardrails", [])
+        system_prompt = raw["system_prompt"]
+        if prompt_guardrail_names:
+            try:
+                blocks = [get_prompt_guardrail(name) for name in prompt_guardrail_names]
+            except UnknownPromptGuardrailError as exc:
+                raise PromptValidationError(
+                    friendly_error(
+                        f"Step '{step}' is misconfigured and needs a developer fix "
+                        f"before it can run.",
+                        f"Step '{step}' prompt_guardrails: {exc}",
+                    )
+                ) from exc
+            system_prompt = "\n\n".join([system_prompt] + [b.render() for b in blocks])
+
         return PromptConfig(
             step=raw["step"],
             version=raw["version"],
             scope=raw["scope"],
             format=raw["format"],
             constraints=raw["constraints"],
-            system_prompt=raw["system_prompt"],
+            system_prompt=system_prompt,
             user_prompt=raw.get("user_prompt"),
             assistant_prompt=raw.get("assistant_prompt"),
+            prompt_guardrails=prompt_guardrail_names,
         )
 
     def has_placeholders(self, step: str, filename: str | None = None) -> bool:

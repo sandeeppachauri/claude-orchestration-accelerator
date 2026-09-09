@@ -1,0 +1,17 @@
+# config/prompt_guardrails.yaml
+#
+# Named, reusable prompt-content policy blocks -- dos/don'ts composed
+# into a prompt's rendered system_prompt text. Unrelated to
+# config/guardrails.yaml (tool-call enforcement via PreToolUse hooks --
+# see .claude/rules/guardrails-registry.md). A prompt YAML file opts in
+# by name via its own `prompt_guardrails: [...]` field. See
+# .claude/rules/prompt-guardrails.md.
+
+insuranceSupportPolicy:
+  in_bounds:
+    - "Only provide information about insurance types we currently offer"
+  out_of_bounds:
+    - "If asked about an insurance type we don't offer, politely say we don't provide that service"
+    - "Do not speculate about future product offerings or company plans"
+    - "Do not make promises or enter into agreements you're not authorized to make -- you only provide information and guidance"
+    - "Do not mention any competitor's products or services"

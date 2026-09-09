@@ -40,6 +40,7 @@ EXACT_SYNCED_PAIRS = [
     (REPO_ROOT / ".claude" / "rules" / "capability-registry.md", SCAFFOLD_DATA / ".claude" / "rules" / "capability-registry.md"),
     (REPO_ROOT / ".claude" / "rules" / "mcp-scope.md", SCAFFOLD_DATA / ".claude" / "rules" / "mcp-scope.md"),
     (REPO_ROOT / ".claude" / "rules" / "guardrails-registry.md", SCAFFOLD_DATA / ".claude" / "rules" / "guardrails-registry.md"),
+    (REPO_ROOT / ".claude" / "rules" / "prompt-guardrails.md", SCAFFOLD_DATA / ".claude" / "rules" / "prompt-guardrails.md"),
     (REPO_ROOT / ".claude" / "rules" / "context-mode.md", SCAFFOLD_DATA / ".claude" / "rules" / "context-mode.md"),
     (REPO_ROOT / ".claude" / "rules" / "streaming.md", SCAFFOLD_DATA / ".claude" / "rules" / "streaming.md"),
     (REPO_ROOT / "config" / "process_registry.yaml", SCAFFOLD_CONFIG / "process_registry.yaml"),
@@ -202,6 +203,12 @@ def check_guardrails_yaml_exists(errors: list[str]) -> None:
         errors.append(f"missing scaffold_data copy: {scaffold_guardrails}")
 
 
+def check_prompt_guardrails_yaml_exists(errors: list[str]) -> None:
+    scaffold_prompt_guardrails = SCAFFOLD_CONFIG / "prompt_guardrails.yaml"
+    if not scaffold_prompt_guardrails.exists():
+        errors.append(f"missing scaffold_data copy: {scaffold_prompt_guardrails}")
+
+
 def check_examples_referenced(errors: list[str]) -> None:
     """templatingDemo/escalate/dummyDemoSkill are this repo's worked
     example -- scaffold_data must ship the same names so a snippet quoted
@@ -264,6 +271,7 @@ def main() -> int:
     check_capability_rule_doc_matches_registry(errors)
     check_howto_capability_table_matches_registry(errors)
     check_guardrails_yaml_exists(errors)
+    check_prompt_guardrails_yaml_exists(errors)
     check_examples_referenced(errors)
     check_prompts_mirrored(errors)
 

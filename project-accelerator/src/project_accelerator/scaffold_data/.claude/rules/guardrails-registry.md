@@ -6,11 +6,16 @@ paths:
 
 # `config/guardrails.yaml` schema and the `guardrails` step key
 
-General-purpose enforcement -- redaction, rate-limiting, forced
-validation, etc. -- with nothing to do with MCP access. For MCP
-server/tool scoping (`mcp_servers`/`allowed_tools`) or the `skills` step
-key, see `.claude/rules/mcp-scope.md` instead -- a separate, independent
-mechanism.
+**Tool-call enforcement only.** This mechanism attaches as a
+`PreToolUse` hook (redaction, rate-limiting, forced validation, etc.)
+that denies/allows individual tool calls -- it never touches prompt
+text or `system_prompt`, and has nothing to do with MCP access. If what
+you actually want is reusable dos/don'ts composed into a prompt's
+*text* (e.g. "only discuss offerings we sell," "never mention a
+competitor"), see `.claude/rules/prompt-guardrails.md` instead -- a
+separate, independent mechanism, easy to confuse with this one on name
+alone. For MCP server/tool scoping (`mcp_servers`/`allowed_tools`) or
+the `skills` step key, see `.claude/rules/mcp-scope.md`.
 
 Guardrail *logic* (the mechanism) is project-level Python code in
 `orchestration_accelerator/guardrails.py`; guardrail *parameters*
