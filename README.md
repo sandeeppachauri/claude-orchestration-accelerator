@@ -46,6 +46,11 @@ pipx run --spec "git+https://github.com/sandeeppachauri/claude-orchestration-acc
 # with Docker deployment artifacts generated (Dockerfile, docker-compose.yml, FastAPI example)
 pipx run --spec "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=project-accelerator" \
   cpa new --project-name my-app --venv --docker-project yes
+
+# force a fresh pull instead of reusing pipx's cached ephemeral venv (cached up to 14 days --
+# use this if you just pushed a change to this repo and `cpa` still behaves like the old version)
+pipx run --no-cache --spec "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=project-accelerator" \
+  cpa new --project-name my-app --venv --sample-needed yes
 ```
 
 Full flag reference (`cpa new --help`, or see `project-accelerator/README.md`'s
