@@ -113,31 +113,49 @@ def _ensure_project_logging_configured() -> None:
         pass
 
 
+def _resolve_project_config_path(filename: str, package_default: Path) -> Path:
+    """cwd-first resolution for every per-project config/*.yaml file this
+    accelerator reads. A scaffolded project's own config/<filename>
+    always wins when present; the package's shipped default is only for
+    this repo's own internal dev/test runs (no scaffolded config/
+    directory at all)."""
+    cwd_path = Path.cwd() / "config" / filename
+    if cwd_path.exists():
+        return cwd_path
+    return package_default
+
+
 def _resolve_registry_and_prompts_dir() -> tuple[Path, Path]:
     """A scaffolded project has its own process_registry.yaml/prompts/ at
     its cwd; the accelerator repo itself (for its own dev/test use) falls
     back to orchestration_accelerator's shipped sample files."""
-    cwd_registry = Path.cwd() / "config" / "process_registry.yaml"
-    cwd_prompts = Path.cwd() / "prompts"
-    if cwd_registry.exists():
-        return cwd_registry, cwd_prompts
-
     from orchestration_accelerator.prompting import PROMPTS_DIR
     from orchestration_accelerator.registry import DEFAULT_REGISTRY_PATH
 
-    return DEFAULT_REGISTRY_PATH, PROMPTS_DIR
+    registry_path = _resolve_project_config_path("process_registry.yaml", DEFAULT_REGISTRY_PATH)
+    prompts_dir = Path.cwd() / "prompts" if registry_path != DEFAULT_REGISTRY_PATH else PROMPTS_DIR
+    return registry_path, prompts_dir
 
 
 def _resolve_capability_registry_path() -> Path:
     """Same cwd-first-else-shipped-default resolution as
     _resolve_registry_and_prompts_dir(), for capability_registry.yaml."""
-    cwd_capabilities = Path.cwd() / "config" / "capability_registry.yaml"
-    if cwd_capabilities.exists():
-        return cwd_capabilities
-
     from orchestration_accelerator.registry import DEFAULT_CAPABILITY_REGISTRY_PATH
 
-    return DEFAULT_CAPABILITY_REGISTRY_PATH
+    return _resolve_project_config_path("capability_registry.yaml", DEFAULT_CAPABILITY_REGISTRY_PATH)
+
+
+def _resolve_prompt_guardrails_path() -> Path:
+    """Same cwd-first-else-shipped-default resolution, for
+    prompt_guardrails.yaml -- previously missing entirely, which made
+    PromptManager.get() always resolve guardrail names against
+    orchestration_accelerator's own installed-package path instead of a
+    scaffolded project's config/prompt_guardrails.yaml."""
+    from orchestration_accelerator.prompt_guardrails import DEFAULT_PROMPT_GUARDRAILS_CONFIG_PATH
+
+    return _resolve_project_config_path(
+        "prompt_guardrails.yaml", DEFAULT_PROMPT_GUARDRAILS_CONFIG_PATH
+    )
 
 
 def _resolve_step_configs(
@@ -238,7 +256,9 @@ async def _run_one_step(
             )
 
         if prompt_file is not None:
-            pm = PromptManager(prompts_dir=prompts_dir)
+            pm = PromptManager(
+                prompts_dir=prompts_dir, prompt_guardrails_path=_resolve_prompt_guardrails_path()
+            )
             cfg, system_prompt, assistant_prompt, user_content = pm.render(
                 step_name, input_data, filename=prompt_file
             )
@@ -329,7 +349,9 @@ async def _run_one_step(
 
         validated_output = raw_output
         if cfg is not None:
-            pm = PromptManager(prompts_dir=prompts_dir)
+            pm = PromptManager(
+                prompts_dir=prompts_dir, prompt_guardrails_path=_resolve_prompt_guardrails_path()
+            )
             validated_output = pm.validate_output(step_name, cfg, raw_output)
 
         return {
@@ -385,7 +407,9 @@ async def _run_session_step(
         model = step_config["model"]
 
         if prompt_file is not None:
-            pm = PromptManager(prompts_dir=prompts_dir)
+            pm = PromptManager(
+                prompts_dir=prompts_dir, prompt_guardrails_path=_resolve_prompt_guardrails_path()
+            )
             cfg, system_prompt, _assistant_prompt, user_content = pm.render(
                 step_name, input_data, filename=prompt_file
             )
@@ -454,7 +478,9 @@ async def _run_session_step(
 
         validated_output = raw_output
         if cfg is not None:
-            pm = PromptManager(prompts_dir=prompts_dir)
+            pm = PromptManager(
+                prompts_dir=prompts_dir, prompt_guardrails_path=_resolve_prompt_guardrails_path()
+            )
             validated_output = pm.validate_output(step_name, cfg, raw_output)
 
         return {
@@ -522,7 +548,9 @@ async def _execute_session_mode(
     first_model = first_step_config.get("model", "claude-sonnet-5")
     first_system_prompt = first_step_config.get("system_prompt", "You are a helpful assistant.")
     if first_step_config.get("prompt") is not None:
-        pm = PromptManager(prompts_dir=prompts_dir)
+        pm = PromptManager(
+            prompts_dir=prompts_dir, prompt_guardrails_path=_resolve_prompt_guardrails_path()
+        )
         _, first_system_prompt, _, _ = pm.render(
             first_step_name, input_data, filename=first_step_config["prompt"]
         )
@@ -597,7 +625,9 @@ async def _run_parallel_session_branch(
     model = step_config.get("model", "claude-sonnet-5")
     system_prompt = step_config.get("system_prompt", "You are a helpful assistant.")
     if step_config.get("prompt") is not None:
-        pm = PromptManager(prompts_dir=prompts_dir)
+        pm = PromptManager(
+            prompts_dir=prompts_dir, prompt_guardrails_path=_resolve_prompt_guardrails_path()
+        )
         _, system_prompt, _, _ = pm.render(step_name, input_data, filename=step_config["prompt"])
 
     client = await open_agent_sdk_session(
@@ -684,7 +714,9 @@ async def _execute_parallel_mode(
     synthesis_input: str | dict[str, Any] = input_data
     prompt_file = synthesis_config.get("prompt")
     if prompt_file is not None:
-        pm = PromptManager(prompts_dir=prompts_dir)
+        pm = PromptManager(
+            prompts_dir=prompts_dir, prompt_guardrails_path=_resolve_prompt_guardrails_path()
+        )
         if pm.has_placeholders(synthesis_name, filename=prompt_file):
             synthesis_input = (
                 dict(input_data) if isinstance(input_data, dict) else {"input": input_data}
@@ -782,7 +814,9 @@ async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
         step_input: str | dict[str, Any] = input_data
         prompt_file = step_config.get("prompt")
         if results and prompt_file is not None:
-            pm = PromptManager(prompts_dir=prompts_dir)
+            pm = PromptManager(
+                prompts_dir=prompts_dir, prompt_guardrails_path=_resolve_prompt_guardrails_path()
+            )
             if pm.has_placeholders(step_name, filename=prompt_file):
                 # A dict input_data (templatingDemo-style, multi-field
                 # placeholders) keeps its original named fields untouched --

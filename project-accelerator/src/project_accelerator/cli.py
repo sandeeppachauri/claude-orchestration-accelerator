@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.resources
+import os
 import shutil
 import subprocess
 import sys
@@ -1970,7 +1971,24 @@ def cmd_new(args: argparse.Namespace) -> None:
         )
         print(f"Created virtual environment at {venv_dir}")
     else:
-        python_exe = sys.executable
+        active_venv = os.environ.get("VIRTUAL_ENV")
+        if active_venv:
+            python_exe = str(
+                Path(active_venv)
+                / ("Scripts" if sys.platform == "win32" else "bin")
+                / ("python.exe" if sys.platform == "win32" else "python")
+            )
+        else:
+            python_exe = sys.executable
+            print(
+                "Warning: no virtual environment is active and --venv was not "
+                "requested -- installing accelerator packages into "
+                f"{python_exe}, which may be an isolated tool runner (e.g. "
+                "pipx) rather than a project environment you intend to use. "
+                "Pass --venv (recommended) or --python <interpreter> to be "
+                "explicit.",
+                file=sys.stderr,
+            )
 
     accelerators_root = (
         Path(args.accelerators_path).expanduser().resolve()
@@ -2031,7 +2049,9 @@ def main() -> None:
         "--no-venv",
         dest="venv",
         action="store_false",
-        help="Install into the currently active environment",
+        help="Install into the currently active virtual environment (checked "
+        "via $VIRTUAL_ENV); if none is active, warns and falls back to this "
+        "process's own interpreter",
     )
     new_parser.add_argument(
         "--python",

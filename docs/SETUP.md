@@ -146,7 +146,7 @@ python examples/api_server.py                                       # FastAPI wr
 ## 8. Scaffold a new project with the CLI (both paths)
 
 ```bash
-cpa new --project-name my-app --no-venv     # installs into the currently active env
+cpa new --project-name my-app --no-venv     # installs into the currently active venv ($VIRTUAL_ENV); warns and uses this process's own interpreter if none is active
 # or
 cpa new --project-name my-app --venv        # creates my-app/.venv and installs there
 # or

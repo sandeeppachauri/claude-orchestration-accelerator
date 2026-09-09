@@ -121,8 +121,13 @@ class PromptManager:
 
     REQUIRED_FIELDS = {"step", "version", "scope", "format", "constraints", "system_prompt"}
 
-    def __init__(self, prompts_dir: Path | str = PROMPTS_DIR):
+    def __init__(
+        self,
+        prompts_dir: Path | str = PROMPTS_DIR,
+        prompt_guardrails_path: Path | str | None = None,
+    ):
         self.prompts_dir = Path(prompts_dir)
+        self.prompt_guardrails_path = prompt_guardrails_path
 
     def get(self, step: str, filename: str | None = None) -> PromptConfig:
         """Load a step's prompt config. `filename`, when given, lets a
@@ -159,7 +164,10 @@ class PromptManager:
         system_prompt = raw["system_prompt"]
         if prompt_guardrail_names:
             try:
-                blocks = [get_prompt_guardrail(name) for name in prompt_guardrail_names]
+                blocks = [
+                    get_prompt_guardrail(name, path=self.prompt_guardrails_path)
+                    for name in prompt_guardrail_names
+                ]
             except UnknownPromptGuardrailError as exc:
                 raise PromptValidationError(
                     friendly_error(

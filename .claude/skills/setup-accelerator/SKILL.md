@@ -23,15 +23,26 @@ for the mechanical work.
 
 ## What you're driving
 
-- `cpa new --project-name <name> [--venv|--no-venv] [--sample-needed yes|no]`
-  scaffolds a directory named `<name>` under the current working directory.
-  It always copies the shipped sample `process_registry.yaml` and
-  `prompts/*.yaml`, writes a `.env` with `ENVIRONMENT=local` /
-  `DEFAULT_MODEL=claude-sonnet-5`, copies the reference `.claude/` skeleton,
-  `CLAUDE.md`, `CLAUDE.local.md`, writes `pipeline/run_pipeline.py`,
+- `cpa new --project-name <name> [--path <dir>] [--venv|--no-venv]
+  [--python <interpreter>] [--accelerators-path <dir>]
+  [--allow-missing-accelerators] [--sample-needed yes|no]
+  [--docker-project yes|no]` scaffolds a directory named `<name>` under
+  `--path` (default: current working directory). It always copies the
+  shipped sample `process_registry.yaml` and `prompts/*.yaml`, writes a
+  `.env` with `ENVIRONMENT=local` / `DEFAULT_MODEL=claude-sonnet-5`,
+  copies the reference `.claude/` skeleton, `CLAUDE.md`,
+  `CLAUDE.local.md`, writes `pipeline/run_pipeline.py`,
   `tests/test_sample_pipeline.py`, `README.md`, and installs all four
-  accelerator packages (editable) into either a fresh `.venv` (default,
-  `--venv`) or the currently active environment (`--no-venv`).
+  accelerator packages (editable) into a fresh `.venv` (default,
+  `--venv`), the currently active virtual environment (`--no-venv`,
+  falls back with a warning to this process's own interpreter if none
+  is active), or an explicit interpreter (`--python`, mutually
+  exclusive with `--venv`). `--accelerators-path` points at a local
+  checkout of the sibling `Accelerators` repo when it isn't at the
+  default `../Accelerators` location; `--allow-missing-accelerators`
+  scaffolds even if it can't be found. `--sample-needed no` skips the
+  `templatingDemo` example; `--docker-project yes` also generates
+  `Dockerfile`/`docker-compose.yml`/a FastAPI example.
   `--sample-needed` (default `yes`) controls whether the `templatingDemo`
   example process and its `dummyDemoSkill` are included alongside
   `ticketClassification`/`onboarding` — pass `no` if the user wants a clean

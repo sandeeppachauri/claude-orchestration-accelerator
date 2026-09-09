@@ -132,7 +132,11 @@ def get_process(
                 f"usually means the script was run from the wrong working "
                 f"directory. cd into your scaffolded project's root (the "
                 f"folder containing config/process_registry.yaml) and "
-                f"re-run it from there.",
+                f"re-run it from there. If {resolved_path} points inside a "
+                f"'.venv' that isn't this project's own, double-check the "
+                f"active virtual environment matches this project's .venv "
+                f"(.venv\\Scripts\\activate on Windows) -- a different "
+                f"project's venv left active can shadow this one.",
                 f"process_registry.yaml not found at {resolved_path} while "
                 f"resolving process {process!r}.",
             )
