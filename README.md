@@ -40,6 +40,20 @@ pipx run --spec "git+https://github.com/sandeeppachauri/claude-orchestration-acc
   cpa new --project-name my-app --sample-needed no
 ```
 
+Full flag reference (`cpa new --help`, or see `project-accelerator/README.md`'s
+"CLI" section for detail on each):
+
+```bash
+cpa new --project-name <name>              # required
+  [--path <dir>]                           # parent dir to scaffold into (default: cwd)
+  [--venv | --no-venv]                     # fresh .venv (default) vs. install into $VIRTUAL_ENV
+  [--python <interpreter>]                 # install into an existing interpreter instead; mutually exclusive with --venv
+  [--accelerators-path <dir>]              # local checkout of the sibling Accelerators repo
+  [--allow-missing-accelerators]           # scaffold even if those two packages fail to install
+  [--sample-needed yes|no]                 # include templatingDemo example (default: yes)
+  [--docker-project yes|no]                # generate Dockerfile/compose/FastAPI example (default: no)
+```
+
 Then call it:
 
 ```python

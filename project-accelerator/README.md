@@ -65,8 +65,13 @@ pipx run --spec "git+https://github.com/sandeeppachauri/claude-orchestration-acc
 # or install cpa once, then run it as usual:
 pip install "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=project-accelerator"
 cpa new --project-name my-app --venv
+cpa new --project-name my-app --no-venv
 cpa new --project-name my-app --path /some/other/dir --venv
 cpa new --project-name my-app --python /path/to/existing/venv/bin/python
+cpa new --project-name my-app --accelerators-path /path/to/Accelerators --venv
+cpa new --project-name my-app --allow-missing-accelerators --venv
+cpa new --project-name my-app --sample-needed no --venv
+cpa new --project-name my-app --docker-project yes --venv
 ```
 
 Generates a starter project: `prompts/*.yaml`, `process_registry.yaml`,
@@ -76,10 +81,18 @@ full reference Claude Code project skeleton, and
 package data (`scaffold_data/`) inside this package, not read off a repo
 checkout, so scaffolding works the same whether `cpa` itself came from a
 local editable install or straight from git. Installs all four
-accelerators into the chosen venv (or the active environment with
-`--no-venv`) -- editable from a local checkout of this repo/`Accelerators`
-if one is present next to it, otherwise straight from GitHub.
+accelerators into the chosen venv, editable from a local checkout of this
+repo/`Accelerators` if one is present next to it, otherwise straight from
+GitHub.
 
+- `--venv` (default) -- create a fresh `.venv` inside the scaffolded
+  project and install into it.
+- `--no-venv` -- install into whichever virtual environment is currently
+  active (`$VIRTUAL_ENV`) instead of creating a new one. If no venv is
+  active, warns and falls back to the interpreter running `cpa` itself --
+  under `pipx run`, that's `pipx`'s own isolated tool environment, not
+  something a scaffolded project can import from, so prefer `--venv` or
+  `--python <interpreter>` when in doubt.
 - `--path <dir>` -- parent directory to scaffold into (default: current
   directory). The project is created at `<dir>/<project-name>`.
 - `--python <exe>` -- install into an existing interpreter/venv instead of
