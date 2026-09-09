@@ -539,6 +539,12 @@ included here -- see `.claude/rules/context-mode.md`,
   independent branches run concurrently, then `synthesis_step`
   reconciles both. See "Advanced step/process features" above.
 
+- **`examples/run_prompt_guardrails.py`** -- runnable `prompt_guardrails`
+  walkthrough (`templatingDemo.supportReply`): prints the composed
+  `system_prompt` (policy text appended) before making a model call, so
+  the effect is visible even without a credential configured. See
+  `.claude/rules/prompt-guardrails.md`.
+
 """
         if include_samples
         else ""
@@ -1349,6 +1355,88 @@ if __name__ == "__main__":
     )
 
 
+def _write_prompt_guardrails_example(dest: Path, include_samples: bool = True) -> None:
+    if not include_samples:
+        return
+    examples_dir = dest / "examples"
+    examples_dir.mkdir(exist_ok=True)
+    (examples_dir / "run_prompt_guardrails.py").write_text(
+        '''"""
+run_prompt_guardrails.py
+
+Runnable example of prompt_guardrails (see
+.claude/rules/prompt-guardrails.md) -- a reusable, named prompt-content
+policy block (dos/don'ts) composed into a prompt's system_prompt text at
+load time, resolved against config/prompt_guardrails.yaml. Unrelated to
+config/guardrails.yaml's `guardrails:` step key (tool-call enforcement
+via PreToolUse hooks) -- see .claude/rules/guardrails-registry.md for
+that, a separate, independent mechanism.
+
+Demonstrates templatingDemo.supportReply: prompts/support_reply.yaml
+sets `prompt_guardrails: [insuranceSupportPolicy]`, so every reply this
+step drafts is bound by config/prompt_guardrails.yaml's
+`insuranceSupportPolicy` entry (only discuss offered insurance types, no
+speculation, no unauthorized promises, no competitor mentions) without
+that policy text being hand-copied into this one prompt file.
+
+Needs a credential (ANTHROPIC_API_KEY env var, or an ambient `claude
+login` OAuth session) resolved via claude-auth-accelerator.
+
+Run: python examples/run_prompt_guardrails.py
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from auth_accelerator.exceptions import AuthResolutionError
+from orchestration_accelerator.prompting import PromptManager
+from project_accelerator import execute
+
+
+def main() -> None:
+    # Show the composed system_prompt (policy text appended) before
+    # making any model call, so the effect of prompt_guardrails is
+    # visible even without a credential configured. prompts_dir/
+    # prompt_guardrails_path point at this project's own config/
+    # (relative to this script's location, not PromptManager()'s
+    # installed-package defaults) so this resolves correctly regardless
+    # of how orchestration_accelerator was installed.
+    project_root = Path(__file__).resolve().parent.parent
+    pm = PromptManager(
+        prompts_dir=project_root / "prompts",
+        prompt_guardrails_path=project_root / "config" / "prompt_guardrails.yaml",
+    )
+    cfg = pm.get("supportReply", filename="support_reply.yaml")
+    print("--- composed system_prompt (prompt_guardrails applied) ---")
+    print(cfg.system_prompt)
+    print("--- end system_prompt ---\\n")
+
+    try:
+        result = execute(
+            {
+                "process": "templatingDemo",
+                "step": "supportReply",
+                "input": {
+                    "customer_message": "Do you offer pet insurance, and what's coming next year?"
+                },
+                "backend": "agent_sdk",
+                "environment": "local",
+            }
+        )
+    except AuthResolutionError as exc:
+        print(f"No credential resolved ({exc}). Set ANTHROPIC_API_KEY or run `claude login`.")
+        return
+
+    print(f"[supportReply] {result['supportReply']['output']}")
+
+
+if __name__ == "__main__":
+    main()
+'''
+    )
+
+
 def _write_parallel_processing_example(dest: Path, include_samples: bool = True) -> None:
     if not include_samples:
         return
@@ -1792,6 +1880,8 @@ rather than failing -- this file is runnable immediately after scaffold
 without requiring credentials, but does not fabricate a passing result.
 """
 
+from pathlib import Path
+
 import pytest
 
 from orchestration_accelerator.prompting import PromptManager
@@ -1820,7 +1910,9 @@ def test_ticket_classification_classify_step():
     assert "classify" in result
     category = result["classify"]["output"]
 
-    pm = PromptManager()
+    # prompts_dir is this project's own prompts/ (relative to this test
+    # file's location, not PromptManager()'s installed-package default).
+    pm = PromptManager(prompts_dir=Path(__file__).resolve().parent.parent / "prompts")
     cfg = pm.get("classify", filename="classify.yaml")
     # Re-validating here proves the returned value already satisfies the
     # format contract -- execute() validates internally too.
@@ -1949,6 +2041,7 @@ def cmd_new(args: argparse.Namespace) -> None:
     _write_support_session_example(dest, include_samples)
     _write_assistant_seed_example(dest, include_samples)
     _write_streaming_example(dest, include_samples)
+    _write_prompt_guardrails_example(dest, include_samples)
     _write_parallel_processing_example(dest, include_samples)
     _write_sample_test(dest, include_samples)
     _write_api_server_example(dest, include_docker)
