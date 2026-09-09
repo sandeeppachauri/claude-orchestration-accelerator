@@ -904,7 +904,8 @@ class TicketTriager:
 
 
 class TicketEscalator:
-    """Thin wrapper around execute() for templatingDemo's full process (triage + escalate, no step narrowing)."""
+    """Thin wrapper around execute() for templatingDemo's full process
+    (triage + escalate + supportReply, no step narrowing)."""
 
     def __init__(self, environment: str = "local", backend: str = "agent_sdk") -> None:
         self.environment = environment
@@ -918,11 +919,15 @@ class TicketEscalator:
         body: str,
         account_history: str,
         sla_minutes_remaining: int,
+        customer_message: str,
     ) -> dict:
         return execute({
             "process": "templatingDemo",
-            # no "step" -- runs triage then escalate, in the order
-            # config/process_registry.yaml's `steps` list declares.
+            # no "step" -- runs triage, escalate, then supportReply, in
+            # the order config/process_registry.yaml's `steps` list
+            # declares. supportReply needs customer_message, which
+            # triage/escalate don't use -- see the shared-input-dict note
+            # in README.md's "Runtime input" section.
             "input": {
                 "ticket_id": ticket_id,
                 "customer_name": customer_name,
@@ -930,6 +935,7 @@ class TicketEscalator:
                 "body": body,
                 "account_history": account_history,
                 "sla_minutes_remaining": sla_minutes_remaining,
+                "customer_message": customer_message,
             },
             "environment": self.environment,
             "backend": self.backend,
@@ -947,7 +953,7 @@ _SAMPLE_USAGE_TEMPLATING_MAIN = '''
     )
     print(result)
 
-    print("--- Example 3: dynamic / templated input, full process (triage + escalate) ---")
+    print("--- Example 3: dynamic / templated input, full process (triage + escalate + supportReply) ---")
     escalator = TicketEscalator()
     result = escalator.run(
         ticket_id="T-1",
@@ -956,6 +962,7 @@ _SAMPLE_USAGE_TEMPLATING_MAIN = '''
         body="My invoice is wrong",
         account_history="3 prior tickets, no refunds issued",
         sla_minutes_remaining=45,
+        customer_message="My invoice is wrong",
     )
     print(result)
 '''
@@ -981,13 +988,14 @@ be a dict covering every placeholder triage.yaml declares --
 PromptManager.render() fills them in at call time.
 
 Example 3 (dynamic / templated input, full process) -- TicketEscalator
-wraps templatingDemo with NO `step` narrowing, so both `triage` and
-`escalate` run in order against the SAME `input` dict. `escalate`
-needs two keys `triage` doesn't (account_history,
-sla_minutes_remaining), so `input` here is the union of every
-placeholder either step declares. Each step only consumes the subset
-it needs from the shared dict -- a key destined for the other step is
-present but simply unused for a given step, not an error.
+wraps templatingDemo with NO `step` narrowing, so `triage`, `escalate`,
+and `supportReply` all run in order against the SAME `input` dict.
+Each step needs keys the others don't (`escalate` needs
+account_history/sla_minutes_remaining, `supportReply` needs
+customer_message), so `input` here is the union of every placeholder
+any step declares. Each step only consumes the subset it needs from
+the shared dict -- a key destined for another step is present but
+simply unused for a given step, not an error.
 """
         if include_samples
         else "\n\nOne worked example -- TicketClassifier wraps the ticketClassification\nprocess (static input, no {key} placeholders).\n"
