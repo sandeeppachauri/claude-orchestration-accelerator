@@ -38,6 +38,14 @@ pipx run --spec "git+https://github.com/sandeeppachauri/claude-orchestration-acc
 # clean project, no sample
 pipx run --spec "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=project-accelerator" \
   cpa new --project-name my-app --sample-needed no
+
+# with a fresh .venv created and the sample installed into it
+pipx run --spec "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=project-accelerator" \
+  cpa new --project-name my-app --venv --sample-needed yes
+
+# with Docker deployment artifacts generated (Dockerfile, docker-compose.yml, FastAPI example)
+pipx run --spec "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=project-accelerator" \
+  cpa new --project-name my-app --venv --docker-project yes
 ```
 
 Full flag reference (`cpa new --help`, or see `project-accelerator/README.md`'s
