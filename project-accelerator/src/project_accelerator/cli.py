@@ -1838,24 +1838,65 @@ def _install_accelerators(
     installing straight from GitHub, so `cpa new` works standalone from a
     pip/pipx install with no repo cloned locally. Returns the list of
     packages that could not be installed either way (only possible for the
-    two accelerators_root packages when allow_missing_accelerators is set)."""
+    two accelerators_root packages when allow_missing_accelerators is set).
+
+    Each package prints its own "[i/N] Installing <label>..." line right
+    before its `pip install` subprocess starts -- with up to 5 packages
+    installed sequentially, each of which may need to clone/build from
+    git, a run with no per-step output looks indistinguishable from a
+    hang. `pip`'s own `--quiet` flag stays on throughout; only our own
+    one-line-per-package announcements are added, not pip's raw output."""
     local_packages = [
-        accelerators_root / "claude-auth-accelerator",
-        accelerators_root / "ClaudeSDKLoggerAccelerator",
+        ("claude-auth-accelerator", accelerators_root / "claude-auth-accelerator"),
+        ("ClaudeSDKLoggerAccelerator", accelerators_root / "ClaudeSDKLoggerAccelerator"),
     ]
     git_specs = [
         f"git+{ACCELERATORS_GIT_URL}#subdirectory=claude-auth-accelerator",
         f"git+{ACCELERATORS_GIT_URL}#subdirectory=ClaudeSDKLoggerAccelerator",
     ]
 
+    if REPO_ROOT.exists() and (REPO_ROOT / "pyproject.toml").exists():
+        own_packages = [
+            ("claude-orchestration-accelerator", ["-e", f"{REPO_ROOT}[batch]"]),
+            (
+                "claude-model-router-accelerator",
+                ["-e", f"{REPO_ROOT / 'model-router'}[agent_sdk,messages_api]"],
+            ),
+            ("claude-project-accelerator", ["-e", str(REPO_ROOT / "project-accelerator")]),
+        ]
+    else:
+        own_packages = [
+            (
+                "claude-orchestration-accelerator",
+                [f"claude-orchestration-accelerator[batch] @ git+{ORCHESTRATION_GIT_URL}"],
+            ),
+            (
+                "claude-model-router-accelerator",
+                [
+                    f"claude-model-router-accelerator[agent_sdk,messages_api] @ "
+                    f"git+{ORCHESTRATION_GIT_URL}#subdirectory=model-router"
+                ],
+            ),
+            (
+                "claude-project-accelerator",
+                [f"git+{ORCHESTRATION_GIT_URL}#subdirectory=project-accelerator"],
+            ),
+        ]
+
+    total_steps = len(local_packages) + len(own_packages)
+    step = 0
     missing = []
-    for local_path, git_spec in zip(local_packages, git_specs):
+
+    for (label, local_path), git_spec in zip(local_packages, git_specs):
+        step += 1
         if local_path.exists():
+            print(f"  [{step}/{total_steps}] Installing {label} (local checkout)...")
             subprocess.run(
                 [python_exe, "-m", "pip", "install", "-e", str(local_path), "--quiet"],
                 check=True,
             )
             continue
+        print(f"  [{step}/{total_steps}] Installing {label} (from GitHub)...")
         try:
             subprocess.run(
                 [python_exe, "-m", "pip", "install", git_spec, "--quiet"],
@@ -1870,61 +1911,11 @@ def _install_accelerators(
     # otherwise install straight from GitHub. project-accelerator itself
     # must be installed too -- the scaffolded pipeline/examples import
     # `project_accelerator`, not just its dependencies.
-    if REPO_ROOT.exists() and (REPO_ROOT / "pyproject.toml").exists():
-        subprocess.run(
-            [python_exe, "-m", "pip", "install", "-e", f"{REPO_ROOT}[batch]", "--quiet"], check=True
-        )
-        subprocess.run(
-            [
-                python_exe,
-                "-m",
-                "pip",
-                "install",
-                "-e",
-                f"{REPO_ROOT / 'model-router'}[agent_sdk,messages_api]",
-                "--quiet",
-            ],
-            check=True,
-        )
-        subprocess.run(
-            [python_exe, "-m", "pip", "install", "-e", str(REPO_ROOT / "project-accelerator"), "--quiet"],
-            check=True,
-        )
-    else:
-        subprocess.run(
-            [
-                python_exe,
-                "-m",
-                "pip",
-                "install",
-                f"claude-orchestration-accelerator[batch] @ git+{ORCHESTRATION_GIT_URL}",
-                "--quiet",
-            ],
-            check=True,
-        )
-        subprocess.run(
-            [
-                python_exe,
-                "-m",
-                "pip",
-                "install",
-                f"claude-model-router-accelerator[agent_sdk,messages_api] @ "
-                f"git+{ORCHESTRATION_GIT_URL}#subdirectory=model-router",
-                "--quiet",
-            ],
-            check=True,
-        )
-        subprocess.run(
-            [
-                python_exe,
-                "-m",
-                "pip",
-                "install",
-                f"git+{ORCHESTRATION_GIT_URL}#subdirectory=project-accelerator",
-                "--quiet",
-            ],
-            check=True,
-        )
+    for label, pip_args in own_packages:
+        step += 1
+        print(f"  [{step}/{total_steps}] Installing {label}...")
+        subprocess.run([python_exe, "-m", "pip", "install", *pip_args, "--quiet"], check=True)
+
     return missing
 
 
