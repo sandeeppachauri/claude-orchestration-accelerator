@@ -54,11 +54,17 @@ def _install_fake_messages_api(monkeypatch, response_text="ok"):
     fake_anthropic = types.SimpleNamespace(Anthropic=FakeClient)
     monkeypatch.setitem(sys.modules, "anthropic", fake_anthropic)
 
+    class FakeAuthResolutionError(Exception):
+        pass
+
+    fake_auth_exceptions = types.SimpleNamespace(AuthResolutionError=FakeAuthResolutionError)
     fake_auth = types.SimpleNamespace(
         build_api_credential=lambda environment: "sk-test",
         build_base_url=lambda environment: "https://api.anthropic.com",
+        exceptions=fake_auth_exceptions,
     )
     monkeypatch.setitem(sys.modules, "auth_accelerator", fake_auth)
+    monkeypatch.setitem(sys.modules, "auth_accelerator.exceptions", fake_auth_exceptions)
     return captured
 
 
