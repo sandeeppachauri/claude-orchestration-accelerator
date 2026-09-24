@@ -60,10 +60,10 @@ straight from GitHub:
 
 ```bash
 # one-shot, no persistent install:
-pipx run --spec "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=project-accelerator" cpa new --project-name my-app
+pipx run --spec "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git@0.2.1#subdirectory=project-accelerator" cpa new --project-name my-app
 
 # or install cpa once, then run it as usual:
-pip install "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=project-accelerator"
+pip install "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git@0.2.1#subdirectory=project-accelerator"
 cpa new --project-name my-app --venv
 cpa new --project-name my-app --no-venv
 cpa new --project-name my-app --path /some/other/dir --venv

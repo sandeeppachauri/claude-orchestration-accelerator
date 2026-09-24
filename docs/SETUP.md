@@ -68,12 +68,15 @@ documents a git-URL form, but pip supports one via `#subdirectory=`, so
 this works as an equivalent, unofficial fallback (still Path A):
 
 ```bash
-pip install "git+https://github.com/sandeeppachauri/Accelerators.git#subdirectory=claude-auth-accelerator"
-pip install "git+https://github.com/sandeeppachauri/Accelerators.git#subdirectory=ClaudeSDKLoggerAccelerator"
+pip install "git+https://github.com/sandeeppachauri/Accelerators.git@66436dff3b87186c13f2ff4a77b091808517fe93#subdirectory=claude-auth-accelerator"
+pip install "git+https://github.com/sandeeppachauri/Accelerators.git@66436dff3b87186c13f2ff4a77b091808517fe93#subdirectory=ClaudeSDKLoggerAccelerator"
 ```
 
-Pin a specific commit/tag/branch by appending `@<ref>` before the `#`, e.g.
-`git+https://github.com/sandeeppachauri/Accelerators.git@v0.2.0#subdirectory=claude-auth-accelerator`.
+Pin a specific commit by appending `@<sha>` before the `#` as shown above --
+the `Accelerators` repo has no tags, so a full commit SHA is the only
+reproducible pin (this is the same pin `model-router`'s own `pyproject.toml`
+and `cpa new`'s generated `Dockerfile` use; see `ACCELERATORS_GIT_PIN` in
+`project-accelerator/src/project_accelerator/cli.py`).
 
 ## 4A. Install the three packages in this repo — Manual path
 
@@ -188,10 +191,10 @@ be installed straight from this GitHub repo:
 
 ```bash
 # one-off, no persistent install (uses pipx; ephemeral venv):
-pipx run --spec "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=project-accelerator" cpa new --project-name my-app
+pipx run --spec "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git@0.2.1#subdirectory=project-accelerator" cpa new --project-name my-app
 
 # or install cpa itself, then run it as usual:
-pip install "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=project-accelerator"
+pip install "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git@0.2.1#subdirectory=project-accelerator"
 cpa new --project-name my-app
 ```
 

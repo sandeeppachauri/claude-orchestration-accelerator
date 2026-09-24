@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -7,22 +7,21 @@ COPY . .
 RUN apt-get update && apt-get install --no-install-recommends -y git \
     && rm -rf /var/lib/apt/lists/*
 
+# claude-auth-accelerator arrives transitively through model-router's own
+# pinned dependency -- do not list it here separately with a different URL
+# spelling, or pip sees two specs for one package name and fails to
+# resolve. ClaudeSDKLoggerAccelerator has no PyPI distribution and isn't a
+# transitive dependency of anything above, so it's still installed
+# explicitly, pinned to a commit SHA (the Accelerators repo has no tags).
+# claude-orchestration-accelerator/model-router are pinned to release tag
+# 0.2.1 -- see project-accelerator/src/project_accelerator/cli.py's
+# ORCHESTRATION_GIT_PIN / ACCELERATORS_GIT_PIN for why and where to bump
+# these together on the next release.
 RUN pip install --no-cache-dir --quiet \
-    "git+https://github.com/sandeeppachauri/Accelerators.git#subdirectory=claude-auth-accelerator" \
-    "git+https://github.com/sandeeppachauri/Accelerators.git#subdirectory=ClaudeSDKLoggerAccelerator" \
-    "claude-agent-sdk" "anthropic" "fastapi" "uvicorn"
-
-# claude-orchestration-accelerator isn't published to PyPI -- install it
-# from git in its own step first, so model-router/project-accelerator's
-# plain "claude-orchestration-accelerator>=0.1.0" dependency line is
-# already satisfied by the time pip resolves it, instead of pip trying
-# (and failing) to find a PyPI distribution for it.
-RUN pip install --no-cache-dir --quiet \
-    "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git"
-RUN pip install --no-cache-dir --quiet \
-    "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=model-router"
-RUN pip install --no-cache-dir --quiet \
-    "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git#subdirectory=project-accelerator"
+    "git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git@0.2.1#subdirectory=project-accelerator" \
+    "git+https://github.com/sandeeppachauri/Accelerators.git@66436dff3b87186c13f2ff4a77b091808517fe93#subdirectory=ClaudeSDKLoggerAccelerator" \
+    "claude-agent-sdk" "anthropic" "fastapi" "uvicorn" \
+    && pip check
 
 # Non-root user whose home matches claude-auth-accelerator's OS-session
 # mount convention (/home/agent/.claude, /home/agent/.claude.json) -- lets

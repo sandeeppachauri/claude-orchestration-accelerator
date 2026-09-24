@@ -1,6 +1,6 @@
 [project]
 name = "claude-orchestration-accelerator"
-version = "0.1.0"
+version = "0.2.1"
 description = "Prompt resolution + process registry (prompt/model/fallback config) for the Claude master accelerator stack"
 requires-python = ">=3.10"
 dependencies = [

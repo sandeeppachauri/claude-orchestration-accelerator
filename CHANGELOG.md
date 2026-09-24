@@ -4,6 +4,32 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+### Fixed (0.2.1)
+
+- `model-router/pyproject.toml`'s `claude-auth-accelerator` dependency was a
+  bare `git+...Accelerators.git#subdirectory=claude-auth-accelerator` (no
+  ref) -- a consumer pinning `claude-auth-accelerator` to a SHA elsewhere
+  (e.g. this project's own Dockerfile generator) got `pip`
+  `ResolutionImpossible` (two different URL specs for one package name).
+  Pinned to commit `66436dff3b87186c13f2ff4a77b091808517fe93`.
+- `ORCHESTRATION_GIT_PIN` (`project-accelerator/src/project_accelerator/cli.py`)
+  switched from a commit SHA of this repo to release tag `0.2.1`. Pinning
+  this repo to a SHA of itself was structurally always one commit stale --
+  a fix can only be pinned-to after it's already committed. `Accelerators`
+  still has no tags, so `ACCELERATORS_GIT_PIN` stays SHA-pinned (now to the
+  fixed commit above, not the earlier short `66436df`).
+- `--docker-project`'s generated Dockerfile (and this repo's own root
+  `Dockerfile`) bumped `FROM python:3.11-slim` to `python:3.12-slim`,
+  collapsed the multi-step accelerator install into one `pip install` +
+  `pip check`, and dropped the separate `claude-auth-accelerator` install
+  line -- it now arrives transitively via `model-router`'s fixed
+  dependency above, so it's never installed twice under two different URL
+  spellings.
+- Updated every doc/example git-URL reference (`README.md`,
+  `project-accelerator/README.md`, `docs/SETUP.md`) to the `@0.2.1`
+  tag / full-SHA pins above, so copy-pasted install commands can't
+  reintroduce the unpinned-HEAD problem this release fixes.
+
 ### Fixed (0.1.1)
 
 - `FileManager.upload()`/`retrieve()` called anthropic's pre-GA

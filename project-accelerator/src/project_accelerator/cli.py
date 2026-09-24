@@ -30,16 +30,20 @@ ACCELERATORS_ROOT = REPO_ROOT.parent / "Accelerators"
 ORCHESTRATION_GIT_URL = "https://github.com/sandeeppachauri/claude-orchestration-accelerator.git"
 ACCELERATORS_GIT_URL = "https://github.com/sandeeppachauri/Accelerators.git"
 
-# Neither sibling repo publishes version tags, so a bare git URL resolves to
-# whatever commit happens to be at the default branch's HEAD when `cpa new`
-# runs -- non-reproducible, and it breaks `pip install claude-project-
-# accelerator==<pinned version>` (a pinned root package can't resolve
-# against unpinned-HEAD siblings that may have moved since that release was
-# cut). Pin both repos to a known-good commit SHA instead; bump these two
-# constants (and pyproject.toml's matching `@<SHA>` refs) together, then
-# re-run `cpa new` end-to-end before committing the bump.
-ORCHESTRATION_GIT_PIN = "9bd7c61a165023eb8d13e71cc4450dd6bad4a726"
-ACCELERATORS_GIT_PIN = "66436df"
+# A bare git URL resolves to whatever commit happens to be at the default
+# branch's HEAD when `cpa new` runs -- non-reproducible, and it breaks
+# `pip install claude-project-accelerator==<pinned version>` (a pinned root
+# package can't resolve against unpinned-HEAD siblings that may have moved
+# since that release was cut). This repo (claude-orchestration-accelerator)
+# cuts real release tags, so it's pinned to the release tag being cut --
+# pinning it to a SHA of itself is structurally always one commit stale,
+# since a fix can only be pinned-to after it's already committed. The
+# Accelerators repo has no tags at all, so it stays pinned to a commit SHA.
+# Bump both constants (and every pyproject.toml's matching `@<ref>`) together
+# when cutting a new release, then re-run `cpa new` end-to-end before
+# tagging/pushing.
+ORCHESTRATION_GIT_PIN = "0.2.1"
+ACCELERATORS_GIT_PIN = "66436dff3b87186c13f2ff4a77b091808517fe93"
 
 SKELETON_ENTRIES = [
     # CLAUDE.md ships inside .claude/ (below) -- both ./CLAUDE.md and
@@ -1653,31 +1657,28 @@ def _write_docker_files(dest: Path, include_docker: bool = False) -> None:
         return
 
     (dest / "Dockerfile").write_text(
-        f'''FROM python:3.11-slim
+        f'''FROM python:3.12-slim
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install --no-install-recommends -y git \\
     && rm -rf /var/lib/apt/lists/*
 
+# project-accelerator pulls in claude-orchestration-accelerator and
+# claude-model-router-accelerator (pinned to ORCHESTRATION_GIT_PIN, a
+# release tag); claude-auth-accelerator arrives transitively through
+# model-router's own pinned dependency -- do not list it here separately
+# with a different URL spelling, or pip sees two specs for one package
+# name and fails to resolve. ClaudeSDKLoggerAccelerator has no PyPI
+# distribution and isn't a transitive dependency of anything above, so it's
+# still installed explicitly, pinned to ACCELERATORS_GIT_PIN (a commit SHA
+# -- that repo has no tags). See ORCHESTRATION_GIT_PIN / ACCELERATORS_GIT_PIN
+# in cli.py for why and where to bump them.
 RUN pip install --no-cache-dir --quiet \\
-    "git+{ACCELERATORS_GIT_URL}@{ACCELERATORS_GIT_PIN}#subdirectory=claude-auth-accelerator" \\
+    "git+{ORCHESTRATION_GIT_URL}@{ORCHESTRATION_GIT_PIN}#subdirectory=project-accelerator" \\
     "git+{ACCELERATORS_GIT_URL}@{ACCELERATORS_GIT_PIN}#subdirectory=ClaudeSDKLoggerAccelerator" \\
-    "claude-agent-sdk>=0.2.140,<0.3" "anthropic>=1.8,<2" "fastapi" "uvicorn"
-
-# claude-orchestration-accelerator isn't published to PyPI -- install it
-# from git in its own step first, so model-router/project-accelerator's
-# plain "claude-orchestration-accelerator>=0.1.0" dependency line is
-# already satisfied by the time pip resolves it, instead of pip trying
-# (and failing) to find a PyPI distribution for it. Both repos are pinned
-# to a commit SHA (neither publishes tags) -- see ORCHESTRATION_GIT_PIN /
-# ACCELERATORS_GIT_PIN in cli.py for why and where to bump them.
-RUN pip install --no-cache-dir --quiet \\
-    "git+{ORCHESTRATION_GIT_URL}@{ORCHESTRATION_GIT_PIN}"
-RUN pip install --no-cache-dir --quiet \\
-    "git+{ORCHESTRATION_GIT_URL}@{ORCHESTRATION_GIT_PIN}#subdirectory=model-router"
-RUN pip install --no-cache-dir --quiet \\
-    "git+{ORCHESTRATION_GIT_URL}@{ORCHESTRATION_GIT_PIN}#subdirectory=project-accelerator"
+    "claude-agent-sdk>=0.2.140,<0.3" "anthropic>=1.8,<2" "fastapi" "uvicorn" \\
+    && pip check
 
 COPY . .
 
