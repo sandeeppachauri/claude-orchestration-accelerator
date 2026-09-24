@@ -297,35 +297,66 @@ classify:
 See `.claude/rules/process-registry.md` for the full schema.
 
 {runtime_input_section}
-## File upload and batch processing
+## File attachments
 
 ```python
-from project_accelerator import upload_file, execute_batch
+from project_accelerator import execute, upload_file
 
 file_id = upload_file("invoice.pdf", backend="messages_api")
 
-result = execute_batch({{
-    "batch_id": "yourBatchJob",  # see config/batch_registry.yaml
-    "inputs": ["item text 1", "item text 2"],
+result = execute({{
+    "process": "yourProcess",
+    "step": "yourStep",
+    "input": "Summarize the attached document.",
+    "attachments": [{{"file_id": file_id, "kind": "document"}}],  # or {{"path": "./invoice.pdf", ...}} to auto-upload
+    "backend": "messages_api",
 }})
 ```
 
-`upload_file()` uploads via Anthropic's Files API (`messages_api`) or
-returns a local path reference (`agent_sdk`). `execute_batch()` submits
-every item in `"inputs"` as one real Anthropic Message Batches API job
-(not a loop over `execute()`), polls until done, then validates each
-result the same way `execute()` does. `config/batch_registry.yaml` maps a
-`batch_id` to a `config/process_registry.yaml` process `id` (+ optional `step`)
--- see `.claude/rules/batch-registry.md` for the schema.{batch_examples_note}
+`upload_file()` alone only returns a `file_id` -- pasting that id into
+plain text does nothing, the model never sees the file. `attachments`
+(payload-only, never a `process_registry.yaml` capability -- see
+`.claude/rules/attachments.md`) is what actually places the file's
+content in the model call, as a real document/image content block
+alongside your text turn. `messages_api` only (`agent_sdk` has no Files
+API surface; a `path`/`text` attachment there is inlined as extra text
+instead).
+
+## Batch processing
+
+```python
+from project_accelerator import submit_batch, get_batch_status, collect_batch
+
+handle = submit_batch({{
+    "batch_id": "yourBatchJob",  # see config/batch_registry.yaml
+    "inputs": ["item text 1", "item text 2"],
+}})
+# persist `handle` (JSON-serializable) -- survives a process restart
+
+status = get_batch_status(handle)   # non-blocking
+if status["all_ended"]:
+    result = collect_batch(handle)  # idempotent -- usage/model/stop_reason per item, plus totals
+```
+
+`submit_batch()` returns immediately with a `BatchHandle` -- no polling
+inside the call, so a paid batch job is never lost to a process restart
+or timeout (persist the handle yourself, or via a `state_store` in
+`config/batch_registry.yaml`). `execute_batch({{"batch_id": ...,
+"inputs": [...]}})` still works as a one-call blocking wrapper
+(submit -> poll -> collect) for simple use. `config/batch_registry.yaml`
+maps a `batch_id` to a `config/process_registry.yaml` process `id`
+(+ optional `step`) -- see `.claude/rules/batch-registry.md` for the full
+schema, including `get_batch_status`/`cancel_batch`/`resubmit_failed` and
+the `state_store` handle-persistence option.{batch_examples_note}
 
 ### `config/process_registry.yaml` vs `config/batch_registry.yaml` -- what goes where
 
 | | `config/process_registry.yaml` | `config/batch_registry.yaml` |
 | --- | --- | --- |
-| Owns | model invocation layer: step order, `prompt`, `model`, `fallback`, capability passthrough | batch-run mechanics only: `batch_id`, `process`/`step` reference, `environment`, `poll_interval_seconds`, `poll_timeout_seconds` |
+| Owns | model invocation layer: step order, `prompt`, `model`, `fallback`, capability passthrough | batch-run mechanics only: `batch_id`, `process`/`step` reference, `environment`, `poll_interval_seconds`, `poll_timeout_seconds`, `max_requests_per_batch`, `state_store` |
 | Model/prompt info | yes -- the only place it lives | no -- always resolved via the `process`/`step` it points at |
 
-A batch entry never duplicates model config -- `execute_batch()` always
+A batch entry never duplicates model config -- batch submission always
 reads `prompt`/`model`/`fallback`/capabilities from the
 `config/process_registry.yaml` step the batch's `process` (+ optional `step`)
 reference resolves to.
@@ -557,13 +588,17 @@ included here -- see `.claude/rules/context-mode.md`,
     batch_example_entries = (
         """
 - **`examples/file_upload_example.py`** -- a `DocumentUploader` class
-  showing `project_accelerator.upload_file()` used directly, then
-  running the uploaded file's reference through `execute()`.
+  showing `project_accelerator.upload_file()` used together with
+  `execute()`'s `attachments` payload key (see
+  `.claude/rules/attachments.md`), so the uploaded file's content
+  actually reaches the model call -- not just its id pasted into text.
 
 - **`examples/batch_processing_example.py`** -- a `BatchTicketClassifier`
   class showing `project_accelerator.execute_batch()` used directly,
   wired to the `ticketClassificationBatch_01` entry in
-  `config/batch_registry.yaml`.
+  `config/batch_registry.yaml`. See `.claude/rules/batch-registry.md`
+  for the resumable `submit_batch`/`get_batch_status`/`collect_batch`
+  split API this wraps.
 """
         if include_samples
         else ""
@@ -792,10 +827,11 @@ call, relying on the payload -> `.env` -> `"local"` fallback.
 
 {examples_file_entries}- **`config/batch_registry.yaml`** -- maps a `batch_id` to a
   `config/process_registry.yaml` process `id` (+ optional `step`), plus
-  batch-specific `poll_interval_seconds`/`poll_timeout_seconds`. See
-  `.claude/rules/batch-registry.md` for the full schema. `execute_batch()`
-  reads this to know which process/step/model runs across every item in
-  a batch job.{batch_registry_note}
+  batch-specific `poll_interval_seconds`/`poll_timeout_seconds`/
+  `max_requests_per_batch`/`state_store`. See
+  `.claude/rules/batch-registry.md` for the full schema. `submit_batch()`/
+  `execute_batch()` read this to know which process/step/model runs
+  across every item in a batch job.{batch_registry_note}
 {batch_example_entries}
 - **`tests/test_sample_pipeline.py`** -- {test_file_entry}
 
@@ -1064,9 +1100,15 @@ def _write_file_upload_example(dest: Path, include_samples: bool = True) -> None
         '''"""
 file_upload_example.py
 
-Sample class wrapping project_accelerator.upload_file() alongside
-execute(). Needs a real credential to actually call a model or upload a
-file. Run: python examples/file_upload_example.py <path-to-file>
+Sample class demonstrating execute()'s `attachments` payload key (see
+.claude/rules/attachments.md) -- messages_api only, since agent_sdk has
+no Files API surface. `upload_file()` alone only returns a `file_id`; a
+`file_id` string pasted into the plain-text `input` field does nothing
+useful -- the model never actually sees the file's content. `attachments`
+is the fix: pass the file_id (or a local `path`, auto-uploaded) as its own
+payload key, and it is placed as a real document/image content block
+alongside the text turn. Needs a real credential to actually call a model
+or upload a file. Run: python examples/file_upload_example.py <path-to-file>
 """
 
 import sys
@@ -1076,7 +1118,8 @@ from project_accelerator import execute, upload_file
 
 class DocumentUploader:
     """Uploads a document, then runs it through the ticketClassification
-    process's classify step."""
+    process's classify step with the file attached as real content --
+    not just its id pasted into a text string."""
 
     def __init__(self, environment: str = "local", backend: str = "messages_api") -> None:
         self.environment = environment
@@ -1090,7 +1133,8 @@ class DocumentUploader:
         return execute({
             "process": "ticketClassification",
             "step": "classify",
-            "input": f"Uploaded file reference: {file_id}",
+            "input": "Summarize the attached document and classify this ticket.",
+            "attachments": [{"file_id": file_id, "kind": "document"}],
             "environment": self.environment,
             "backend": self.backend,
         })
@@ -1101,6 +1145,7 @@ def main() -> None:
     uploader = DocumentUploader()
     result = uploader.classify_document(path)
     print(result)
+    print("Auto-uploaded file ids this call produced:", result["classify"]["uploaded_file_ids"])
 
 
 if __name__ == "__main__":
@@ -1607,7 +1652,7 @@ RUN apt-get update && apt-get install --no-install-recommends -y git \\
 RUN pip install --no-cache-dir --quiet \\
     "git+{ACCELERATORS_GIT_URL}#subdirectory=claude-auth-accelerator" \\
     "git+{ACCELERATORS_GIT_URL}#subdirectory=ClaudeSDKLoggerAccelerator" \\
-    "claude-agent-sdk" "anthropic" "fastapi" "uvicorn"
+    "claude-agent-sdk>=0.2.140,<0.3" "anthropic>=1.8,<2" "fastapi" "uvicorn"
 
 # claude-orchestration-accelerator isn't published to PyPI -- install it
 # from git in its own step first, so model-router/project-accelerator's

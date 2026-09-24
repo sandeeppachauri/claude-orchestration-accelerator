@@ -4,6 +4,62 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+### Fixed (0.1.1)
+
+- `FileManager.upload()`/`retrieve()` called anthropic's pre-GA
+  `files.create`/`files.retrieve` methods, which don't exist on installed
+  anthropic 1.8.0 GA (Files API moved from beta to
+  `client.files.{upload,retrieve_metadata,list,delete,download}`).
+  `upload()` also passed a `purpose` kwarg the real GA `files.upload()`
+  signature doesn't accept at all -- would have raised `TypeError` even
+  after a straight method rename. Fixed both; `retrieve()` kept as a
+  deprecated alias for the new `retrieve_metadata()`.
+- Pinned `anthropic>=1.8,<2` (was unbounded `>=0.40.0`) in the root and
+  `model-router` `pyproject.toml`, and in the `--docker-project`
+  Dockerfile generator's previously-unpinned install line. Pinned
+  `claude-agent-sdk>=0.2.140,<0.3` (was unbounded `>=0.1.0`) the same way.
+- `tests/test_file_manager.py`/`project-accelerator/tests/test_files.py`
+  now autospec against the real `anthropic.resources.files.Files` class
+  instead of a hand-rolled `FakeClient`/`FakeFiles` fake -- a future
+  method rename/signature change now fails the test instead of silently
+  passing.
+
+### Added (0.2.0)
+
+- **`attachments`** -- a new optional payload key on `execute()` and a
+  `submit_batch()` item, letting a call attach file/image/text content to
+  a model turn as real content blocks (not just a `file_id` string pasted
+  into text, which the model can't act on). See
+  `.claude/rules/attachments.md`. Deliberately a payload key, not a
+  `process_registry.yaml` capability, since it varies per call and must
+  bypass `validate_capabilities()`'s per-step whitelist. `messages_api`
+  supports `file_id`/`path`(auto-uploaded)/`text` as document/image
+  blocks; `agent_sdk` has no Files API, so `path`/`text` are inlined as
+  extra text via `query()`'s streaming-input form and `file_id` raises a
+  friendly `AttachmentError`. No attachments -> byte-identical request to
+  before this change (regression-tested on both backends).
+- **Split batch API** -- `submit_batch()`/`get_batch_status()`/
+  `collect_batch()`/`cancel_batch()`/`resubmit_failed()` replace the old
+  single blocking `execute_batch()` call (kept as a thin backward-
+  compatible wrapper over the new functions). `submit_batch()` returns a
+  JSON-serializable `BatchHandle` immediately -- no polling inside the
+  call -- so a batch job survives a process restart or timeout instead of
+  silently losing the provider's batch id. `collect_batch()` is
+  idempotent and now reads full `usage`/`model`/`stop_reason` per item
+  (previously only `content[0].text` was read, which silently returned
+  the wrong/no text when `thinking` was enabled). New optional
+  `batch_registry.yaml` keys: `max_requests_per_batch` (chunks large
+  batches into multiple provider jobs under one handle),
+  `retry_failed_with_fallback`, `state_store` (a `BatchStateStore`
+  protocol mirroring `context-mode.md`'s `session_store` pattern --
+  `none`/`file`/`custom` backends). `submit_batch()` now also runs
+  `validate_capabilities()` and resolves `prompt_guardrails_path`, which
+  the batch path previously skipped entirely. See
+  `.claude/rules/batch-registry.md`.
+- `project_accelerator` now exports `submit_batch`/`get_batch_status`/
+  `collect_batch`/`cancel_batch`/`resubmit_failed` alongside the existing
+  `execute_batch`/`upload_file`/`execute`.
+
 ### Breaking
 
 - `execute()`'s return shape changed. Each step's value in the returned

@@ -50,6 +50,7 @@ async def call_agent_sdk(
     assistant_prompt: str | None = None,
     stream: bool = False,
     on_chunk: Any | None = None,
+    attachments: list[dict[str, Any]] | None = None,
     **extra: Any,
 ) -> dict[str, Any]:
     """Runs one query via claude_agent_sdk, resolving auth through
@@ -91,7 +92,16 @@ async def call_agent_sdk(
     `StreamEvent` text-delta payload as they arrive, interleaved with the
     normal `AssistantMessage`/`ResultMessage` stream -- `on_chunk` is
     optional even with `stream: True`. The final accumulated `text`/
-    `usage`/etc. are identical whether or not streaming was used."""
+    `usage`/etc. are identical whether or not streaming was used.
+
+    `attachments` (see .claude/rules/attachments.md): agent_sdk has no
+    Files API surface, so a `file_id` entry raises AttachmentError before
+    any call is made. `path`/`text` entries are inlined as extra text
+    blocks and sent via query()'s AsyncIterable[dict] streaming-input
+    form -- `{"type": "user", "message": {"role": "user", "content":
+    [...]}, "parent_tool_use_id": None, "session_id": None}` -- instead of
+    the plain-string `prompt` used when no attachments are present, so a
+    call with no attachments is byte-identical to today."""
     from claude_agent_sdk import (
         AssistantMessage,
         ResultMessage,
@@ -127,6 +137,23 @@ async def call_agent_sdk(
         **extra,
     )
 
+    prompt: str | Any = user_content
+    if attachments:
+        from .attachments import build_agent_sdk_content
+
+        attachment_blocks = build_agent_sdk_content(attachments)
+        content = [*attachment_blocks, {"type": "text", "text": user_content}]
+
+        async def _single_turn_stream() -> Any:
+            yield {
+                "type": "user",
+                "message": {"role": "user", "content": content},
+                "parent_tool_use_id": None,
+                "session_id": None,
+            }
+
+        prompt = _single_turn_stream()
+
     text = ""
     tool_call_count = 0
     stop_reason: str | None = None
@@ -135,7 +162,7 @@ async def call_agent_sdk(
     model_used = model
     start = time.monotonic()
     try:
-        async for message in query(prompt=user_content, options=options):
+        async for message in query(prompt=prompt, options=options):
             if isinstance(message, StreamEvent):
                 delta = message.event.get("delta") if isinstance(message.event, dict) else None
                 if isinstance(delta, dict) and delta.get("type") == "text_delta":
@@ -186,6 +213,7 @@ async def call_agent_sdk(
         "latency_ms": latency_ms,
         "session_id": session_id,
         "tool_calls": [{"name": "tool", "count": tool_call_count}] if tool_call_count else [],
+        "uploaded_file_ids": [],
     }
 
 
@@ -336,6 +364,7 @@ async def call_messages_api(
     assistant_prompt: str | None = None,
     stream: bool = False,
     on_chunk: Any | None = None,
+    attachments: list[dict[str, Any]] | None = None,
     **extra: Any,
 ) -> dict[str, Any]:
     """Calls anthropic's Messages API directly, resolving auth through
@@ -378,6 +407,15 @@ async def call_messages_api(
     incompatible with `stream` in this accelerator (not attempted) --
     only the stable, non-beta client streams.
 
+    `attachments` (see .claude/rules/attachments.md), when present,
+    builds `messages[-1]["content"]` as a block array --
+    `[<document/image blocks>, {"type": "text", "text": user_content}]`
+    -- instead of the plain-string `user_content` used when no
+    attachments are present, so a call with no attachments is
+    byte-identical to today. A `path` entry is auto-uploaded via
+    FileManager first; resulting file_id(s) are returned in
+    `uploaded_file_ids`.
+
     Returns a structured dict (`text`, `model_used`, `usage`,
     `stop_reason`, `request_id`, `latency_ms`, `session_id`,
     `tool_calls`) rather than a bare string -- `session_id`/`tool_calls`
@@ -394,10 +432,18 @@ async def call_messages_api(
     if cache_control is not None:
         system = [{"type": "text", "text": system_prompt, "cache_control": cache_control}]
 
+    uploaded_file_ids: list[str] = []
+    user_message_content: str | list[dict[str, Any]] = user_content
+    if attachments:
+        from .attachments import build_messages_api_blocks
+
+        attachment_blocks, uploaded_file_ids = build_messages_api_blocks(attachments, environment)
+        user_message_content = [*attachment_blocks, {"type": "text", "text": user_content}]
+
     messages: list[dict[str, Any]] = []
     if assistant_prompt is not None:
         messages.append({"role": "assistant", "content": assistant_prompt})
-    messages.append({"role": "user", "content": user_content})
+    messages.append({"role": "user", "content": user_message_content})
 
     start = time.monotonic()
     try:
@@ -467,6 +513,7 @@ async def call_messages_api(
         "latency_ms": latency_ms,
         "session_id": None,
         "tool_calls": [],
+        "uploaded_file_ids": uploaded_file_ids,
     }
 
 

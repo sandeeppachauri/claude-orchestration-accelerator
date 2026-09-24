@@ -45,18 +45,24 @@ class FileManager:
         return anthropic.Anthropic(api_key=api_key, base_url=build_base_url(self.environment))
 
     def upload(self, path: str | Path, backend: str = "messages_api", **extra: Any) -> str:
+        from auth_accelerator.exceptions import AuthResolutionError
+
         file_path = Path(path)
         if not file_path.exists():
             raise FileUploadError(f"No such file: {file_path}")
 
         if backend == "messages_api":
             try:
+                extra.pop("purpose", None)  # GA files.upload() has no purpose param
                 with open(file_path, "rb") as f:
-                    result = self._client().files.create(
-                        file=f, purpose=extra.pop("purpose", "user_data")
-                    )
+                    result = self._client().files.upload(file=f, **extra)
                 return result.id
-            except FileUploadError:
+            except (FileUploadError, AuthResolutionError):
+                # AuthResolutionError (no/invalid credential) is a distinct,
+                # caller-actionable failure -- callers already catch it
+                # directly around execute()/upload_file() calls (see
+                # examples/run_ticket_classification.py), so it must not be
+                # swallowed into a generic FileUploadError here.
                 raise
             except Exception as exc:
                 raise FileUploadError(f"Upload failed for {file_path}: {exc}") from exc
@@ -70,25 +76,46 @@ class FileManager:
         raise FileUploadError(f"Unsupported backend '{backend}' for file upload.")
 
     def list(self) -> list[Any]:
+        from auth_accelerator.exceptions import AuthResolutionError
+
         try:
             return list(self._client().files.list())
-        except FileUploadError:
+        except (FileUploadError, AuthResolutionError):
             raise
         except Exception as exc:
             raise FileUploadError(f"List failed: {exc}") from exc
 
-    def retrieve(self, file_id: str) -> Any:
+    def retrieve_metadata(self, file_id: str) -> Any:
+        from auth_accelerator.exceptions import AuthResolutionError
+
         try:
-            return self._client().files.retrieve(file_id)
-        except FileUploadError:
+            return self._client().files.retrieve_metadata(file_id)
+        except (FileUploadError, AuthResolutionError):
             raise
         except Exception as exc:
             raise FileUploadError(f"Retrieve failed for {file_id}: {exc}") from exc
 
+    def retrieve(self, file_id: str) -> Any:
+        """Deprecated alias for retrieve_metadata() -- kept for callers on
+        the old contract; anthropic 1.8.0 GA has no files.retrieve()."""
+        return self.retrieve_metadata(file_id)
+
+    def download(self, file_id: str) -> Any:
+        from auth_accelerator.exceptions import AuthResolutionError
+
+        try:
+            return self._client().files.download(file_id)
+        except (FileUploadError, AuthResolutionError):
+            raise
+        except Exception as exc:
+            raise FileUploadError(f"Download failed for {file_id}: {exc}") from exc
+
     def delete(self, file_id: str) -> Any:
+        from auth_accelerator.exceptions import AuthResolutionError
+
         try:
             return self._client().files.delete(file_id)
-        except FileUploadError:
+        except (FileUploadError, AuthResolutionError):
             raise
         except Exception as exc:
             raise FileUploadError(f"Delete failed for {file_id}: {exc}") from exc

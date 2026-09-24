@@ -43,6 +43,7 @@ EXACT_SYNCED_PAIRS = [
     (REPO_ROOT / ".claude" / "rules" / "prompt-guardrails.md", SCAFFOLD_DATA / ".claude" / "rules" / "prompt-guardrails.md"),
     (REPO_ROOT / ".claude" / "rules" / "context-mode.md", SCAFFOLD_DATA / ".claude" / "rules" / "context-mode.md"),
     (REPO_ROOT / ".claude" / "rules" / "streaming.md", SCAFFOLD_DATA / ".claude" / "rules" / "streaming.md"),
+    (REPO_ROOT / ".claude" / "rules" / "attachments.md", SCAFFOLD_DATA / ".claude" / "rules" / "attachments.md"),
     (REPO_ROOT / "config" / "process_registry.yaml", SCAFFOLD_CONFIG / "process_registry.yaml"),
     (REPO_ROOT / "config" / "batch_registry.yaml", SCAFFOLD_CONFIG / "batch_registry.yaml"),
 ]

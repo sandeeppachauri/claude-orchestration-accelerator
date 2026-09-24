@@ -9,10 +9,10 @@ dependencies = [
 
 [project.optional-dependencies]
 agent_sdk = [
-    "claude-agent-sdk>=0.1.0",
+    "claude-agent-sdk>=0.2.140,<0.3",
 ]
 messages_api = [
-    "anthropic>=0.40.0",
+    "anthropic>=1.8,<2",
     "claude-auth-accelerator @ git+https://github.com/sandeeppachauri/Accelerators.git#subdirectory=claude-auth-accelerator",
 ]
 dev = [

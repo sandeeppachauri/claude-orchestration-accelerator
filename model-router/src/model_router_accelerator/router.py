@@ -56,6 +56,7 @@ async def execute_with_fallback(
     environment: str = "local",
     base_backoff_seconds: float = 0.1,
     session_id: str = "",
+    attachments: list[dict[str, Any]] | None = None,
     **backend_kwargs: Any,
 ) -> dict[str, Any]:
     """Tries `model`, then each entry in `fallback` in order, on a
@@ -66,7 +67,13 @@ async def execute_with_fallback(
     whatever the backend call returns, it does not itself build the
     result shape. Raises FallbackChainExhaustedError if every entry
     fails that way, or propagates any other exception immediately
-    (non-rate-limit errors are not retried across the chain)."""
+    (non-rate-limit errors are not retried across the chain).
+
+    `attachments` is deliberately its own explicit keyword argument, not
+    folded into `**backend_kwargs` -- it is a per-call payload value
+    (execute()'s OPTIONAL_PAYLOAD_KEYS), never a process_registry.yaml
+    capability, so it must never pass through validate_capabilities()'s
+    capability_registry.yaml whitelist. See .claude/rules/attachments.md."""
     if backend not in VALID_BACKENDS:
         raise ValueError(
             friendly_error(
@@ -87,6 +94,7 @@ async def execute_with_fallback(
                 system_prompt=system_prompt,
                 user_content=user_content,
                 environment=environment,
+                attachments=attachments,
                 **backend_kwargs,
             )
         except RateLimitOrOverloadError as exc:

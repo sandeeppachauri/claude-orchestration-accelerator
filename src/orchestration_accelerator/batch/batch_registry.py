@@ -21,7 +21,9 @@ DEFAULT_BATCH_REGISTRY_PATH = (
 )
 
 _DEFAULT_POLL_INTERVAL_SECONDS = 5
-_DEFAULT_POLL_TIMEOUT_SECONDS = 3600
+_DEFAULT_POLL_TIMEOUT_SECONDS = 86400
+_DEFAULT_MAX_REQUESTS_PER_BATCH = 10000
+_DEFAULT_RETRY_FAILED_WITH_FALLBACK = True
 
 
 class BatchJobNotFoundError(Exception):
@@ -40,7 +42,21 @@ def get_batch_job(
     batch_id: str, path: Path | str = DEFAULT_BATCH_REGISTRY_PATH
 ) -> dict[str, Any]:
     """Returns {id, process_id, step, environment, poll_interval_seconds,
-    poll_timeout_seconds} for the entry whose `batch_id` matches."""
+    poll_timeout_seconds, max_requests_per_batch, retry_failed_with_fallback,
+    state_store} for the entry whose `batch_id` matches.
+
+    `max_requests_per_batch` (default 10000, the Anthropic Message Batches
+    API's own per-batch item cap): submit_batch() splits `items` into
+    multiple `messages.batches.create(...)` calls when the count exceeds
+    this, returning multiple `provider_batch_ids` in one BatchHandle.
+
+    `retry_failed_with_fallback` (default True): whether resubmit_failed()
+    is expected to be used for per-item retries against the next model in
+    the fallback chain -- purely descriptive metadata on the handle,
+    resubmit_failed() itself can always be called regardless of this flag.
+
+    `state_store` (default None -> BatchStateStore backend "none", see
+    batch_state_store.py): optional handle-persistence config."""
     registry = load_batch_registry(path)
     for block in registry.values():
         if isinstance(block, dict) and block.get("batch_id") == batch_id:
@@ -55,6 +71,13 @@ def get_batch_job(
                 "poll_timeout_seconds": block.get(
                     "poll_timeout_seconds", _DEFAULT_POLL_TIMEOUT_SECONDS
                 ),
+                "max_requests_per_batch": block.get(
+                    "max_requests_per_batch", _DEFAULT_MAX_REQUESTS_PER_BATCH
+                ),
+                "retry_failed_with_fallback": block.get(
+                    "retry_failed_with_fallback", _DEFAULT_RETRY_FAILED_WITH_FALLBACK
+                ),
+                "state_store": block.get("state_store"),
             }
     raise BatchJobNotFoundError(
         f"No batch job with batch_id '{batch_id}' defined in {path}. Known "

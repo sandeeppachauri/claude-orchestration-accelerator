@@ -6,12 +6,16 @@ from project_accelerator import execute_batch
 
 class _FakeTextBlock:
     def __init__(self, text):
+        self.type = "text"
         self.text = text
 
 
 class _FakeMessage:
     def __init__(self, text):
         self.content = [_FakeTextBlock(text)]
+        self.usage = None
+        self.model = "claude-haiku-4-5-20251001"
+        self.stop_reason = "end_turn"
 
 
 class _FakeResult:

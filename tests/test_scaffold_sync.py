@@ -51,6 +51,10 @@ SYNCED_PAIRS = [
         ROOT / ".claude" / "rules" / "streaming.md",
         SCAFFOLD_DATA / ".claude" / "rules" / "streaming.md",
     ),
+    (
+        ROOT / ".claude" / "rules" / "attachments.md",
+        SCAFFOLD_DATA / ".claude" / "rules" / "attachments.md",
+    ),
 ]
 
 

@@ -7,7 +7,14 @@ ticketClassification:
     prompt: classify.yaml
     model: claude-haiku-4-5-20251001
     fallback: [claude-haiku-4-5-20251001]
-    max_turns: 1  # capability passthrough -- any extra key here reaches the model call untouched
+    # No capability-passthrough keys here -- this step is also used by
+    # ticketClassificationBatch (config/batch_registry.yaml), which is
+    # messages_api-only. An agent_sdk-only key like max_turns would raise
+    # UnsupportedCapabilityError the moment batch_manager.py validates
+    # capabilities against a messages_api backend (see A5-3 in
+    # .claude/rules/batch-registry.md). agent_sdk callers of this step
+    # are unaffected: call_agent_sdk()'s own default is already
+    # max_turns=1, so this key was always a redundant no-op there.
   extract:
     prompt: extract_v2.yaml
     model: claude-haiku-4-5-20251001

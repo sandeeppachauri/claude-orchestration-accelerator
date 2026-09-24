@@ -48,7 +48,12 @@ from model_router_accelerator import execute_with_fallback
 from model_router_accelerator.backends import open_agent_sdk_session, run_session_turn
 
 REQUIRED_PAYLOAD_KEYS = {"process", "input", "backend"}
-OPTIONAL_PAYLOAD_KEYS = {"step", "environment", "session_id", "on_chunk"}
+# `attachments` is a per-call payload key, never a process_registry.yaml
+# capability -- it is threaded through execute_with_fallback()/backends as
+# its own explicit keyword argument, bypassing validate_capabilities()'s
+# capability_registry.yaml whitelist entirely. See
+# .claude/rules/attachments.md.
+OPTIONAL_PAYLOAD_KEYS = {"step", "environment", "session_id", "on_chunk", "attachments"}
 KNOWN_PAYLOAD_KEYS = REQUIRED_PAYLOAD_KEYS | OPTIONAL_PAYLOAD_KEYS
 VALID_BACKENDS = {"agent_sdk", "messages_api"}
 
@@ -228,6 +233,7 @@ async def _run_one_step(
     turn_index: int,
     prompts_dir: Path,
     on_chunk: Any | None = None,
+    attachments: list[dict[str, Any]] | None = None,
 ) -> Any:
     model = step_config.get("model", "<unresolved>")
     try:
@@ -319,6 +325,7 @@ async def _run_one_step(
             environment=environment,
             session_id=session_id,
             on_chunk=step_on_chunk,
+            attachments=attachments,
             **capabilities,
         )
         raw_output = call_result["text"]
@@ -363,6 +370,7 @@ async def _run_one_step(
             "request_id": call_result["request_id"],
             "latency_ms": call_result["latency_ms"],
             "session_id": call_result["session_id"],
+            "uploaded_file_ids": call_result.get("uploaded_file_ids", []),
         }
     except Exception as exc:
         # Every failure path (bad capability config, prompt render/
@@ -840,6 +848,7 @@ async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
             turn_index,
             prompts_dir,
             payload.get("on_chunk"),
+            payload.get("attachments"),
         )
 
     return results
@@ -848,16 +857,19 @@ async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
 def execute(payload: dict[str, Any]) -> dict[str, Any]:
     """The master accelerator's single entry point. Returns
     {step_name: {output, model_used, stop_reason, usage, tool_calls,
-    request_id, latency_ms, session_id}, ...} for every step run -- one
-    entry when payload['step'] narrows to a single step, otherwise one
-    entry per step in process_registry.yaml's `steps` order.
+    request_id, latency_ms, session_id, uploaded_file_ids}, ...} for every
+    step run -- one entry when payload['step'] narrows to a single step,
+    otherwise one entry per step in process_registry.yaml's `steps` order.
 
     `output` carries what earlier versions of this function returned
     directly as `results[step_name]` (a bare string) -- callers written
     against that older contract must switch to
     `results[step_name]["output"]`. `tool_calls`/`session_id` are
     agent_sdk-only (empty list / `None` on messages_api); `request_id`
-    is messages_api-only (`None` on agent_sdk).
+    is messages_api-only (`None` on agent_sdk). `uploaded_file_ids` lists
+    any file_id(s) auto-uploaded from a `path` attachment during this call
+    (empty unless `attachments` included a `path` entry on a messages_api
+    step).
 
     Optional payload keys: `step` (narrow to one step), `environment`,
     `session_id` (cross-call resume for a context_mode: session process
@@ -865,5 +877,10 @@ def execute(payload: dict[str, Any]) -> dict[str, Any]:
     `(step_name: str, chunk: str) -> None` callback invoked per chunk
     for any step with `stream: true` -- see .claude/rules/streaming.md;
     ignored for steps without `stream: true`, and safe to omit even when
-    a step does have it)."""
+    a step does have it), `attachments` (list of
+    `{file_id|path|text, kind, title?, mime_type?, cache?}` dicts, exactly
+    one of file_id/path/text per entry -- see .claude/rules/attachments.md;
+    applies to the sequential threaded step loop only, not to
+    parallel_processing/context_mode: session steps; omitted or empty ->
+    the request is byte-identical to a call with no attachments at all)."""
     return asyncio.run(_execute_async(payload))
