@@ -30,6 +30,17 @@ ACCELERATORS_ROOT = REPO_ROOT.parent / "Accelerators"
 ORCHESTRATION_GIT_URL = "https://github.com/sandeeppachauri/claude-orchestration-accelerator.git"
 ACCELERATORS_GIT_URL = "https://github.com/sandeeppachauri/Accelerators.git"
 
+# Neither sibling repo publishes version tags, so a bare git URL resolves to
+# whatever commit happens to be at the default branch's HEAD when `cpa new`
+# runs -- non-reproducible, and it breaks `pip install claude-project-
+# accelerator==<pinned version>` (a pinned root package can't resolve
+# against unpinned-HEAD siblings that may have moved since that release was
+# cut). Pin both repos to a known-good commit SHA instead; bump these two
+# constants (and pyproject.toml's matching `@<SHA>` refs) together, then
+# re-run `cpa new` end-to-end before committing the bump.
+ORCHESTRATION_GIT_PIN = "9bd7c61a165023eb8d13e71cc4450dd6bad4a726"
+ACCELERATORS_GIT_PIN = "66436df"
+
 SKELETON_ENTRIES = [
     # CLAUDE.md ships inside .claude/ (below) -- both ./CLAUDE.md and
     # ./.claude/CLAUDE.md are supported by Claude Code; this repo uses the
@@ -1650,21 +1661,23 @@ RUN apt-get update && apt-get install --no-install-recommends -y git \\
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir --quiet \\
-    "git+{ACCELERATORS_GIT_URL}#subdirectory=claude-auth-accelerator" \\
-    "git+{ACCELERATORS_GIT_URL}#subdirectory=ClaudeSDKLoggerAccelerator" \\
+    "git+{ACCELERATORS_GIT_URL}@{ACCELERATORS_GIT_PIN}#subdirectory=claude-auth-accelerator" \\
+    "git+{ACCELERATORS_GIT_URL}@{ACCELERATORS_GIT_PIN}#subdirectory=ClaudeSDKLoggerAccelerator" \\
     "claude-agent-sdk>=0.2.140,<0.3" "anthropic>=1.8,<2" "fastapi" "uvicorn"
 
 # claude-orchestration-accelerator isn't published to PyPI -- install it
 # from git in its own step first, so model-router/project-accelerator's
 # plain "claude-orchestration-accelerator>=0.1.0" dependency line is
 # already satisfied by the time pip resolves it, instead of pip trying
-# (and failing) to find a PyPI distribution for it.
+# (and failing) to find a PyPI distribution for it. Both repos are pinned
+# to a commit SHA (neither publishes tags) -- see ORCHESTRATION_GIT_PIN /
+# ACCELERATORS_GIT_PIN in cli.py for why and where to bump them.
 RUN pip install --no-cache-dir --quiet \\
-    "git+{ORCHESTRATION_GIT_URL}"
+    "git+{ORCHESTRATION_GIT_URL}@{ORCHESTRATION_GIT_PIN}"
 RUN pip install --no-cache-dir --quiet \\
-    "git+{ORCHESTRATION_GIT_URL}#subdirectory=model-router"
+    "git+{ORCHESTRATION_GIT_URL}@{ORCHESTRATION_GIT_PIN}#subdirectory=model-router"
 RUN pip install --no-cache-dir --quiet \\
-    "git+{ORCHESTRATION_GIT_URL}#subdirectory=project-accelerator"
+    "git+{ORCHESTRATION_GIT_URL}@{ORCHESTRATION_GIT_PIN}#subdirectory=project-accelerator"
 
 COPY . .
 
@@ -1988,8 +2001,8 @@ def _install_accelerators(
         ("ClaudeSDKLoggerAccelerator", accelerators_root / "ClaudeSDKLoggerAccelerator"),
     ]
     git_specs = [
-        f"git+{ACCELERATORS_GIT_URL}#subdirectory=claude-auth-accelerator",
-        f"git+{ACCELERATORS_GIT_URL}#subdirectory=ClaudeSDKLoggerAccelerator",
+        f"git+{ACCELERATORS_GIT_URL}@{ACCELERATORS_GIT_PIN}#subdirectory=claude-auth-accelerator",
+        f"git+{ACCELERATORS_GIT_URL}@{ACCELERATORS_GIT_PIN}#subdirectory=ClaudeSDKLoggerAccelerator",
     ]
 
     if REPO_ROOT.exists() and (REPO_ROOT / "pyproject.toml").exists():
@@ -2005,18 +2018,21 @@ def _install_accelerators(
         own_packages = [
             (
                 "claude-orchestration-accelerator",
-                [f"claude-orchestration-accelerator[batch] @ git+{ORCHESTRATION_GIT_URL}"],
+                [
+                    f"claude-orchestration-accelerator[batch] @ "
+                    f"git+{ORCHESTRATION_GIT_URL}@{ORCHESTRATION_GIT_PIN}"
+                ],
             ),
             (
                 "claude-model-router-accelerator",
                 [
                     f"claude-model-router-accelerator[agent_sdk,messages_api] @ "
-                    f"git+{ORCHESTRATION_GIT_URL}#subdirectory=model-router"
+                    f"git+{ORCHESTRATION_GIT_URL}@{ORCHESTRATION_GIT_PIN}#subdirectory=model-router"
                 ],
             ),
             (
                 "claude-project-accelerator",
-                [f"git+{ORCHESTRATION_GIT_URL}#subdirectory=project-accelerator"],
+                [f"git+{ORCHESTRATION_GIT_URL}@{ORCHESTRATION_GIT_PIN}#subdirectory=project-accelerator"],
             ),
         ]
 
