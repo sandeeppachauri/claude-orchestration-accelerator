@@ -5,7 +5,7 @@ description = "Master accelerator: execute(payload) entry point + cpa scaffold C
 requires-python = ">=3.10"
 dependencies = [
     "claude-orchestration-accelerator[batch] @ git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git@0.2.1",
-    "claude-model-router-accelerator[agent_sdk,messages_api] @ git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git@0.2.1#subdirectory=model-router",
+    "claude-model-router-accelerator[agent_sdk,messages_api] @ git+https://github.com/sandeeppachauri/claude-orchestration-accelerator.git@0.2.2#subdirectory=model-router",
     "python-dotenv>=1.0.0",
     "pyyaml>=6.0",
     "fastapi>=0.115.0",
