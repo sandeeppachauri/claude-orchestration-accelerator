@@ -159,6 +159,8 @@ async def call_agent_sdk(
     stop_reason: str | None = None
     session_id: str | None = None
     usage: dict[str, Any] | None = None
+    num_turns: int | None = None
+    model_usage: dict[str, Any] | None = None
     model_used = model
     start = time.monotonic()
     try:
@@ -183,6 +185,8 @@ async def call_agent_sdk(
                 stop_reason = message.stop_reason
                 session_id = message.session_id
                 usage = message.usage
+                num_turns = message.num_turns
+                model_usage = message.model_usage
     except Exception as exc:  # noqa: BLE001 - re-tag rate-limit/overload errors uniformly
         if _looks_like_rate_limit_or_overload(exc):
             raise RateLimitOrOverloadError(str(exc)) from exc
@@ -214,6 +218,8 @@ async def call_agent_sdk(
         "session_id": session_id,
         "tool_calls": [{"name": "tool", "count": tool_call_count}] if tool_call_count else [],
         "uploaded_file_ids": [],
+        "num_turns": num_turns,
+        "model_usage": model_usage,
     }
 
 
@@ -300,6 +306,8 @@ async def run_session_turn(
     stop_reason: str | None = None
     session_id: str | None = None
     usage: dict[str, Any] | None = None
+    num_turns: int | None = None
+    model_usage: dict[str, Any] | None = None
     start = time.monotonic()
     try:
         await client.query(user_content)
@@ -321,6 +329,8 @@ async def run_session_turn(
                 stop_reason = message.stop_reason
                 session_id = message.session_id
                 usage = message.usage
+                num_turns = message.num_turns
+                model_usage = message.model_usage
     except Exception as exc:  # noqa: BLE001 - re-tag rate-limit/overload errors uniformly
         if _looks_like_rate_limit_or_overload(exc):
             raise RateLimitOrOverloadError(str(exc)) from exc
@@ -350,6 +360,8 @@ async def run_session_turn(
         "latency_ms": latency_ms,
         "session_id": session_id,
         "tool_calls": [{"name": "tool", "count": tool_call_count}] if tool_call_count else [],
+        "num_turns": num_turns,
+        "model_usage": model_usage,
     }
 
 

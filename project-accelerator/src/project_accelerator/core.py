@@ -371,6 +371,8 @@ async def _run_one_step(
             "latency_ms": call_result["latency_ms"],
             "session_id": call_result["session_id"],
             "uploaded_file_ids": call_result.get("uploaded_file_ids", []),
+            "num_turns": call_result.get("num_turns"),
+            "model_usage": call_result.get("model_usage"),
         }
     except Exception as exc:
         # Every failure path (bad capability config, prompt render/
@@ -500,6 +502,8 @@ async def _run_session_step(
             "request_id": call_result["request_id"],
             "latency_ms": call_result["latency_ms"],
             "session_id": call_result["session_id"],
+            "num_turns": call_result.get("num_turns"),
+            "model_usage": call_result.get("model_usage"),
         }
     except Exception as exc:
         await _log_best_effort(
