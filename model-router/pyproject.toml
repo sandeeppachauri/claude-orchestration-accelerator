@@ -1,6 +1,6 @@
 [project]
 name = "claude-model-router-accelerator"
-version = "0.2.1"
+version = "0.2.2"
 description = "Ordered model/fallback execution against a pluggable Claude Agent SDK / Messages API backend"
 requires-python = ">=3.10"
 dependencies = [

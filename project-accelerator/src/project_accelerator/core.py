@@ -48,12 +48,13 @@ from model_router_accelerator import execute_with_fallback
 from model_router_accelerator.backends import open_agent_sdk_session, run_session_turn
 
 REQUIRED_PAYLOAD_KEYS = {"process", "input", "backend"}
-# `attachments` is a per-call payload key, never a process_registry.yaml
-# capability -- it is threaded through execute_with_fallback()/backends as
-# its own explicit keyword argument, bypassing validate_capabilities()'s
-# capability_registry.yaml whitelist entirely. See
-# .claude/rules/attachments.md.
-OPTIONAL_PAYLOAD_KEYS = {"step", "environment", "session_id", "on_chunk", "attachments"}
+# `attachments` and `mcp_server_instances` are per-call payload keys, never
+# process_registry.yaml capabilities -- both are threaded through
+# execute_with_fallback()/backends as their own explicit keyword arguments,
+# bypassing validate_capabilities()'s capability_registry.yaml whitelist.
+# See .claude/rules/attachments.md for `attachments`; `mcp_server_instances`
+# carries in-process SDK MCP server config dicts (not YAML scope strings).
+OPTIONAL_PAYLOAD_KEYS = {"step", "environment", "session_id", "on_chunk", "attachments", "mcp_server_instances"}
 KNOWN_PAYLOAD_KEYS = REQUIRED_PAYLOAD_KEYS | OPTIONAL_PAYLOAD_KEYS
 VALID_BACKENDS = {"agent_sdk", "messages_api"}
 
@@ -234,6 +235,7 @@ async def _run_one_step(
     prompts_dir: Path,
     on_chunk: Any | None = None,
     attachments: list[dict[str, Any]] | None = None,
+    mcp_server_instances: dict[str, Any] | None = None,
 ) -> Any:
     model = step_config.get("model", "<unresolved>")
     try:
@@ -326,6 +328,7 @@ async def _run_one_step(
             session_id=session_id,
             on_chunk=step_on_chunk,
             attachments=attachments,
+            mcp_server_instances=mcp_server_instances,
             **capabilities,
         )
         raw_output = call_result["text"]
@@ -667,6 +670,7 @@ async def _execute_parallel_mode(
     session_id: str,
     prompts_dir: Path,
     on_chunk: Any | None,
+    mcp_server_instances: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """parallel_processing: true execution path -- every step but the
     last in `steps_to_run` runs concurrently via asyncio.gather(), each
@@ -713,7 +717,7 @@ async def _execute_parallel_mode(
             *(
                 _run_one_step(
                     step_name, step_config, input_data, backend, environment, session_id,
-                    turn_index, prompts_dir, on_chunk,
+                    turn_index, prompts_dir, on_chunk, None, mcp_server_instances,
                 )
                 for turn_index, (step_name, step_config) in enumerate(branch_steps)
             )
@@ -747,7 +751,7 @@ async def _execute_parallel_mode(
     else:
         results[synthesis_name] = await _run_one_step(
             synthesis_name, synthesis_config, synthesis_input, backend, environment, session_id,
-            synthesis_turn_index, prompts_dir, on_chunk,
+            synthesis_turn_index, prompts_dir, on_chunk, None, mcp_server_instances,
         )
 
     return results
@@ -797,6 +801,7 @@ async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
             session_id,
             prompts_dir,
             payload.get("on_chunk"),
+            payload.get("mcp_server_instances"),
         )
 
     if context["context_mode"] == "session":
@@ -853,6 +858,7 @@ async def _execute_async(payload: dict[str, Any]) -> dict[str, Any]:
             prompts_dir,
             payload.get("on_chunk"),
             payload.get("attachments"),
+            payload.get("mcp_server_instances"),
         )
 
     return results

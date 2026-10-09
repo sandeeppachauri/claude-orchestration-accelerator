@@ -408,3 +408,55 @@ async def test_call_agent_sdk_no_stream_leaves_include_partial_messages_false(mo
         max_turns=1,
     )
     assert captured_options["options"].include_partial_messages is False
+
+
+async def test_call_agent_sdk_mcp_server_instances_passed_to_build_options_not_hook(monkeypatch):
+    """mcp_server_instances (dict) goes to build_options as mcp_servers=.
+    mcp_servers (list) still feeds make_mcp_scope_hook -- the two params are
+    kept separate so hook-scope semantics and in-process SDK servers don't
+    collide."""
+    captured_build_options = {}
+    captured_hook_servers = {}
+
+    import claude_agent_sdk
+    from orchestration_accelerator import mcp_scope
+
+    # Capture what build_options receives
+    def _fake_build_options(*, environment, model, max_turns, system_prompt, hooks,
+                             include_partial_messages=False, **kwargs):
+        captured_build_options.update(kwargs)
+
+        class _FakeOptions:
+            include_partial_messages = False
+        return _FakeOptions()
+
+    # Capture what make_mcp_scope_hook receives
+    real_make_mcp_scope_hook = mcp_scope.make_mcp_scope_hook
+
+    def _capturing_make_mcp_scope_hook(mcp_servers, allowed_tools):
+        captured_hook_servers["mcp_servers"] = mcp_servers
+        return real_make_mcp_scope_hook(mcp_servers, allowed_tools)
+
+    fake_auth = types.SimpleNamespace(build_options=_fake_build_options)
+    monkeypatch.setitem(sys.modules, "auth_accelerator", fake_auth)
+    monkeypatch.setattr(mcp_scope, "make_mcp_scope_hook", _capturing_make_mcp_scope_hook)
+
+    async def _fake_query(*, prompt, options):
+        yield AssistantMessage(content=[TextBlock(text="ok")], model="claude-haiku-4-5-20251001")
+
+    monkeypatch.setattr(claude_agent_sdk, "query", _fake_query)
+
+    instances = {"my_server": {"command": "npx", "args": ["-y", "my-mcp"]}}
+    await backends_module.call_agent_sdk(
+        model="claude-haiku-4-5-20251001",
+        system_prompt="sys",
+        user_content="hi",
+        environment="local",
+        mcp_servers=["my_server"],
+        mcp_server_instances=instances,
+    )
+
+    # mcp_server_instances dict reaches build_options as mcp_servers=
+    assert captured_build_options.get("mcp_servers") == instances
+    # mcp_servers list still feeds the hook (scope enforcement unchanged)
+    assert captured_hook_servers.get("mcp_servers") == ["my_server"]

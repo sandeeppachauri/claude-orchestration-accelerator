@@ -46,6 +46,7 @@ async def call_agent_sdk(
     max_turns: int = 1,
     mcp_servers: list[str] | None = None,
     allowed_tools: list[str] | None = None,
+    mcp_server_instances: dict[str, Any] | None = None,
     guardrails: list[str] | None = None,
     assistant_prompt: str | None = None,
     stream: bool = False,
@@ -67,8 +68,13 @@ async def call_agent_sdk(
     hook-attaching mechanisms rather than forwarded via `**extra`. Both
     are optional and fail-open when omitted -- no hook is attached, and
     the SDK's own default .mcp.json/global-settings MCP discovery is
-    left untouched (ClaudeAgentOptions.mcp_servers itself is never set
-    here).
+    left untouched.
+
+    `mcp_server_instances` is a separate dict of in-process SDK MCP
+    server config objects (not YAML scope strings). When provided, it is
+    forwarded to build_options() as `mcp_servers=` so the SDK picks up
+    those servers directly. This is a runtime-only payload value (like
+    `attachments`), never a process_registry.yaml capability.
 
     Returns a structured dict (`text`, `model_used`, `usage`,
     `stop_reason`, `request_id`, `latency_ms`, `session_id`,
@@ -127,6 +133,10 @@ async def call_agent_sdk(
             {"PreToolUse": [{"hooks": [get_guardrail(name) for name in guardrails]}]}
         )
 
+    build_options_kwargs: dict[str, Any] = {}
+    if mcp_server_instances is not None:
+        build_options_kwargs["mcp_servers"] = mcp_server_instances
+
     options = build_options(
         environment=environment,
         model=model,
@@ -134,6 +144,7 @@ async def call_agent_sdk(
         system_prompt=system_prompt,
         hooks=_merge_hooks(*hook_groups),
         include_partial_messages=stream,
+        **build_options_kwargs,
         **extra,
     )
 
@@ -233,6 +244,7 @@ async def open_agent_sdk_session(
     session_store: Any | None = None,
     mcp_servers: list[str] | None = None,
     allowed_tools: list[str] | None = None,
+    mcp_server_instances: dict[str, Any] | None = None,
     guardrails: list[str] | None = None,
     on_mirror_error: Any | None = None,
     **extra: Any,
@@ -276,6 +288,10 @@ async def open_agent_sdk_session(
             {"PreToolUse": [{"hooks": [get_guardrail(name) for name in guardrails]}]}
         )
 
+    build_options_kwargs: dict[str, Any] = {}
+    if mcp_server_instances is not None:
+        build_options_kwargs["mcp_servers"] = mcp_server_instances
+
     options = build_options(
         environment=environment,
         model=model,
@@ -284,6 +300,7 @@ async def open_agent_sdk_session(
         hooks=_merge_hooks(*hook_groups),
         resume=resume,
         session_store=session_store,
+        **build_options_kwargs,
         **extra,
     )
     client = ClaudeSDKClient(options=options)
@@ -377,6 +394,7 @@ async def call_messages_api(
     stream: bool = False,
     on_chunk: Any | None = None,
     attachments: list[dict[str, Any]] | None = None,
+    mcp_server_instances: dict[str, Any] | None = None,  # agent_sdk-only; accepted and ignored here
     **extra: Any,
 ) -> dict[str, Any]:
     """Calls anthropic's Messages API directly, resolving auth through

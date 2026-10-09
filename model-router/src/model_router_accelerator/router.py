@@ -57,6 +57,7 @@ async def execute_with_fallback(
     base_backoff_seconds: float = 0.1,
     session_id: str = "",
     attachments: list[dict[str, Any]] | None = None,
+    mcp_server_instances: dict[str, Any] | None = None,
     **backend_kwargs: Any,
 ) -> dict[str, Any]:
     """Tries `model`, then each entry in `fallback` in order, on a
@@ -69,11 +70,13 @@ async def execute_with_fallback(
     fails that way, or propagates any other exception immediately
     (non-rate-limit errors are not retried across the chain).
 
-    `attachments` is deliberately its own explicit keyword argument, not
-    folded into `**backend_kwargs` -- it is a per-call payload value
-    (execute()'s OPTIONAL_PAYLOAD_KEYS), never a process_registry.yaml
-    capability, so it must never pass through validate_capabilities()'s
-    capability_registry.yaml whitelist. See .claude/rules/attachments.md."""
+    `attachments` and `mcp_server_instances` are deliberately their own
+    explicit keyword arguments, not folded into `**backend_kwargs` -- both
+    are per-call payload values (execute()'s OPTIONAL_PAYLOAD_KEYS), never
+    process_registry.yaml capabilities, so they must never pass through
+    validate_capabilities()'s capability_registry.yaml whitelist.
+    See .claude/rules/attachments.md for `attachments`; `mcp_server_instances`
+    carries in-process SDK MCP server config dicts (not YAML scope strings)."""
     if backend not in VALID_BACKENDS:
         raise ValueError(
             friendly_error(
@@ -95,6 +98,7 @@ async def execute_with_fallback(
                 user_content=user_content,
                 environment=environment,
                 attachments=attachments,
+                mcp_server_instances=mcp_server_instances,
                 **backend_kwargs,
             )
         except RateLimitOrOverloadError as exc:
